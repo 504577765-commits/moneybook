@@ -16,6 +16,12 @@ dist/
 *.apk
 *.aab
 
+# Capacitor sync 生成物(运行 npx cap sync android 后重建)
+**/android/app/src/main/assets/public/
+**/android/app/src/main/assets/capacitor.config.json
+**/android/app/src/main/assets/capacitor.plugins.json
+**/android/app/debug.keystore
+
 # 解析器测试编译产物
 parser-test/out/
 
