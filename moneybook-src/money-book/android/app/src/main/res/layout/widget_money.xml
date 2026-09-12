@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+v2.2.2 彻底重写 widget layout
+- RemoteViews 只支持 FrameLayout/LinearLayout/RelativeLayout/GridLayout
+- RemoteViews 支持的 View:Button/ImageButton/ImageView/TextView/ProgressBar/...
+- ❌ 不支持 android.view.View (用作分隔线) ← v2.2.0/v2.2.1 bug
+- ❌ 慎用 setImageViewBitmap(fitXY) — Bitmap 太大可能 TransactionTooLargeException
+- v2.2.2 方案:单层 LinearLayout,6 个 TextView,静态 background drawable
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg_pink"
+    android:padding="12dp">
+
+    <!-- 第 1 行:标题 + 时间 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tv_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="💰 今日记账"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="--:--"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- 第 2 行:支出 -->
+    <TextView
+        android:id="@+id/tv_expense"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="支出 ¥0.00"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <!-- 第 3 行:收入 -->
+    <TextView
+        android:id="@+id/tv_income"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="收入 ¥0.00"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp" />
+
+    <!-- 第 4 行:笔数 -->
+    <TextView
+        android:id="@+id/tv_count"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="今日 0 笔"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp" />
+
+    <!-- 第 5 行:最近一笔 -->
+    <TextView
+        android:id="@+id/tv_last"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="还没有记账哦~"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+</LinearLayout>

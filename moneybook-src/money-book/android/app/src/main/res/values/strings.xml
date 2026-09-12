@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">记账本</string>
+    <string name="title_activity_main">记账本</string>
+    <string name="package_name">com.mavis.moneybook</string>
+    <string name="custom_url_scheme">com.mavis.moneybook</string>
+    <string name="a11y_service_description">记账本用辅助功能监听支付通知,自动记账。仅监听通知事件,不读取其他内容。</string>
+    <string name="widget_description">显示今日支出/收入/笔数和最近一笔交易</string>
+    <string name="no_webview_text">页面加载失败,请稍后重试</string>
+</resources>

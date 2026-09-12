@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#5B6CFF</color>
+    <color name="primary_dark">#3D4ED9</color>
+    <color name="accent">#FF6B6B</color>
+    <color name="background">#F4F6FB</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <!-- APP 图标背景色:v2.2.48 紫蓝渐变 -->
+    <color name="ic_launcher_background">#6366F1</color>
+</resources>

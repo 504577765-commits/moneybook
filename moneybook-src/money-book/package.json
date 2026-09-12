@@ -1,0 +1,38 @@
+{
+  "name": "money-book",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "description": "本地记账 APP - 自动识别支付信息",
+  "scripts": {
+    "prebuild": "node scripts/sync-version.cjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android",
+    "cap:run:android": "cap run android"
+  },
+  "dependencies": {
+    "@capacitor-community/sqlite": "^6.0.1",
+    "@capacitor/android": "6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/local-notifications": "^6.0.1",
+    "@capacitor/preferences": "^6.0.2",
+    "dayjs": "^1.11.13",
+    "echarts": "^5.5.1",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.12",
+    "vue-echarts": "^7.0.3",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.62.1",
+    "vite": "^5.4.10"
+  }
+}

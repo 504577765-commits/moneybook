@@ -1,0 +1,32 @@
+# 本机工具链(不进入版本库)
+.tools/
+*.log
+jdkdir.txt
+
+# Node
+node_modules/
+dist/
+
+# Android 构建产物
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+**/android/local.properties
+**/local.properties
+*.apk
+*.aab
+
+# 解析器测试编译产物
+parser-test/out/
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.iml
+
+# 测试残留(截图/日志)
+*.png
+
+# 系统文件
+Thumbs.db
+.DS_Store

@@ -1,0 +1,18 @@
+{
+  "appId": "com.mavis.moneybook",
+  "appName": "记账本",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#5B6CFF"
+    }
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
