@@ -4,11 +4,17 @@ import Records from '../views/Records.vue'
 import Stats from '../views/Stats.vue'
 import Me from '../views/Me.vue'
 import Widget from '../views/Widget.vue'
+import Budget from '../views/Budget.vue'
+import Accounts from '../views/Accounts.vue'
+import ReportBuilder from '../views/ReportBuilder.vue'
 
 const routes = [
   { path: '/', component: Home, name: 'home' },
   { path: '/records', component: Records, name: 'records' },
   { path: '/stats', component: Stats, name: 'stats' },
+  { path: '/budget', component: Budget, name: 'budget' },
+  { path: '/accounts', component: Accounts, name: 'accounts' },
+  { path: '/report', component: ReportBuilder, name: 'report' },
   { path: '/me', component: Me, name: 'me' },
   { path: '/widget', component: Widget, name: 'widget' }
 ]

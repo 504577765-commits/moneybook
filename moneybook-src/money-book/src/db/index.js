@@ -56,7 +56,7 @@ export async function deleteCategory(id) {
 
 // v2.2.78: 恢复手动记账(用户需求变更) — 仍走 Java 端保证 5 层去重
 export async function insertTransaction(tx) {
-  if (!hasCap()) return false
+  if (!hasCap()) return { ok: false, id: null }
   try {
     const r = await cap().insertTransactionJs({
       type: tx.type,
@@ -66,12 +66,14 @@ export async function insertTransaction(tx) {
       merchant: tx.merchant || '',
       note: tx.note || '',
       raw_text: tx.raw_text || '',
-      occurred_at: tx.occurred_at || Date.now()
+      occurred_at: tx.occurred_at || Date.now(),
+      account_id: tx.account_id || 0,
+      to_account_id: tx.to_account_id || 0
     })
-    return r.success === true
+    return { ok: r.success === true, id: tx.id || null }
   } catch (e) {
     console.error('insertTransaction err', e)
-    return false
+    return { ok: false, id: null }
   }
 }
 
@@ -85,11 +87,73 @@ export async function updateTransaction(tx) {
       category_id: tx.category_id,
       merchant: tx.merchant,
       note: tx.note,
-      occurred_at: tx.occurred_at
+      occurred_at: tx.occurred_at,
+      account_id: tx.account_id || 0,
+      to_account_id: tx.to_account_id || 0
     })
     return r.success === true
   } catch (e) {
     console.error('updateTransaction err', e)
+    return false
+  }
+}
+
+// v2.3.0: upsert(撤销/恢复用)
+export async function upsertTransaction(tx) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().upsertTransactionJs({
+      id: tx.id,
+      type: tx.type,
+      amount: tx.amount,
+      category_id: String(tx.category_id || 0),
+      source: tx.source || 'other',
+      merchant: tx.merchant || '',
+      note: tx.note || '',
+      raw_text: tx.raw_text || '',
+      occurred_at: tx.occurred_at || Date.now(),
+      account_id: tx.account_id || 0,
+      to_account_id: tx.to_account_id || 0
+    })
+    return r.success === true
+  } catch (e) {
+    console.error('upsertTransaction err', e)
+    return false
+  }
+}
+
+// v2.3.0: 批量删除
+export async function deleteTransactions(ids) {
+  if (!hasCap() || !ids?.length) return 0
+  try {
+    const r = await cap().deleteTransactionsJs({ ids })
+    return r?.removed || 0
+  } catch (e) {
+    console.error('deleteTransactions err', e)
+    return 0
+  }
+}
+
+// v2.3.0: 批量改分类
+export async function batchSetCategory(ids, categoryId) {
+  if (!hasCap() || !ids?.length) return 0
+  try {
+    const r = await cap().batchSetCategoryJs({ ids, category_id: categoryId })
+    return r?.updated || 0
+  } catch (e) {
+    console.error('batchSetCategory err', e)
+    return 0
+  }
+}
+
+// v2.3.0: 保存拆分明细
+export async function saveTxSplits(txId, splits) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().saveTxSplitsJs({ tx_id: txId, splits: splits || [] })
+    return r.success === true
+  } catch (e) {
+    console.error('saveTxSplits err', e)
     return false
   }
 }
@@ -313,5 +377,123 @@ export async function exportTransactionsToCsv() {
   } catch (e) {
     console.error('exportTransactionsToCsv err', e)
     return { success: false, error: e.message }
+  }
+}
+
+// ===== v2.3.0 账户 =====
+
+export async function getAllAccounts() {
+  if (!hasCap()) return []
+  try {
+    const r = await cap().getAllAccountsJs()
+    return r.accounts || []
+  } catch (e) {
+    console.error('getAllAccounts err', e)
+    return []
+  }
+}
+
+export async function insertAccount({ name, type, icon }) {
+  if (!hasCap()) return { ok: false, id: 0 }
+  try {
+    const r = await cap().insertAccountJs({ name, type, icon })
+    return { ok: r.success === true, id: r.id || 0 }
+  } catch (e) {
+    console.error('insertAccount err', e)
+    return { ok: false, id: 0 }
+  }
+}
+
+export async function updateAccount({ id, name, type, icon, initial_balance }) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().updateAccountJs({ id, name, type, icon, initial_balance })
+    return r.success === true
+  } catch (e) {
+    console.error('updateAccount err', e)
+    return false
+  }
+}
+
+export async function deleteAccount(id) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().deleteAccountJs({ id })
+    return r.success === true
+  } catch (e) {
+    console.error('deleteAccount err', e)
+    return false
+  }
+}
+
+// ===== v2.3.0 预算 =====
+
+/** 某月各分类预算 */
+export async function getBudgets(month) {
+  if (!hasCap()) return []
+  try {
+    const r = await cap().getBudgetsJs({ month })
+    return r.budgets || []
+  } catch (e) {
+    console.error('getBudgets err', e)
+    return []
+  }
+}
+
+export async function setBudget(categoryId, month, amount) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().setBudgetJs({ category_id: categoryId, month, amount })
+    return r.success === true
+  } catch (e) {
+    console.error('setBudget err', e)
+    return false
+  }
+}
+
+// ===== v2.3.0 商户映射 =====
+
+export async function getMerchantAccountId(merchant) {
+  if (!hasCap()) return 0
+  try {
+    const r = await cap().getMerchantAccountIdJs({ merchant })
+    return r.account_id || 0
+  } catch (e) {
+    console.error('getMerchantAccountId err', e)
+    return 0
+  }
+}
+
+export async function setMerchantAccount(merchant, accountId) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().setMerchantAccountJs({ merchant, account_id: accountId })
+    return r.success === true
+  } catch (e) {
+    console.error('setMerchantAccount err', e)
+    return false
+  }
+}
+
+/** 商户记忆分类(null=无) */
+export async function getMerchantCategory(merchant) {
+  if (!hasCap()) return null
+  try {
+    const r = await cap().getMerchantCategoryJs({ merchant })
+    return r.category_id || null
+  } catch (e) {
+    console.error('getMerchantCategory err', e)
+    return null
+  }
+}
+
+export async function setMerchantCategory(merchant, categoryId) {
+  if (!hasCap()) return false
+  try {
+    const r = await cap().setMerchantCategoryJs({ merchant, category_id: categoryId })
+    return r.success === true
+  } catch (e) {
+    console.error('setMerchantCategory err', e)
+    return false
   }
 }

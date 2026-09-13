@@ -476,7 +476,9 @@ public class MoneyNotifier extends Plugin {
                 call.getString("merchant", ""),
                 call.getString("note", ""),
                 call.getString("raw_text", ""),
-                call.getLong("occurred_at", System.currentTimeMillis())
+                call.getLong("occurred_at", System.currentTimeMillis()),
+                call.getLong("account_id", 0L),
+                call.getLong("to_account_id", 0L)
             );
             JSObject ret = new JSObject();
             ret.put("success", ok);
@@ -498,7 +500,9 @@ public class MoneyNotifier extends Plugin {
                 call.getString("category_id", null),
                 call.getString("merchant", ""),
                 call.getString("note", ""),
-                call.getLong("occurred_at", System.currentTimeMillis())
+                call.getLong("occurred_at", System.currentTimeMillis()),
+                call.getLong("account_id", 0L),
+                call.getLong("to_account_id", 0L)
             );
             JSObject ret = new JSObject();
             ret.put("success", ok);
@@ -519,6 +523,255 @@ public class MoneyNotifier extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             Log.e("MoneyNotifier", "deleteTransactionJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    // ========== v2.3.0: JS 桥接扩展(账户/预算/映射/批量/拆分/upsert) ==========
+
+    @PluginMethod
+    public void upsertTransactionJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.upsertTransactionJs(
+                call.getString("id"),
+                call.getString("type", "expense"),
+                call.getDouble("amount", 0.0),
+                call.getString("category_id", null),
+                call.getString("source", "other"),
+                call.getString("merchant", ""),
+                call.getString("note", ""),
+                call.getString("raw_text", ""),
+                call.getLong("occurred_at", System.currentTimeMillis()),
+                call.getLong("account_id", 0L),
+                call.getLong("to_account_id", 0L)
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "upsertTransactionJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void deleteTransactionsJs(PluginCall call) {
+        try {
+            org.json.JSONArray arr = call.getArray("ids");
+            java.util.List<String> ids = new java.util.ArrayList<>();
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) {
+                    String s = arr.optString(i);
+                    if (s != null && !s.isEmpty()) ids.add(s);
+                }
+            }
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            int n = db.deleteTransactionsJs(ids.toArray(new String[0]));
+            JSObject ret = new JSObject();
+            ret.put("success", n > 0);
+            ret.put("removed", n);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "deleteTransactionsJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void batchSetCategoryJs(PluginCall call) {
+        try {
+            org.json.JSONArray arr = call.getArray("ids");
+            java.util.List<String> ids = new java.util.ArrayList<>();
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) {
+                    String s = arr.optString(i);
+                    if (s != null && !s.isEmpty()) ids.add(s);
+                }
+            }
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            int n = db.batchSetCategoryJs(ids.toArray(new String[0]), call.getString("category_id", null));
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("updated", n);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "batchSetCategoryJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void saveTxSplitsJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.saveTxSplitsJs(call.getString("tx_id"), call.getArray("splits"));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "saveTxSplitsJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getAllAccountsJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            org.json.JSONArray arr = db.getAllAccounts();
+            JSObject ret = new JSObject();
+            ret.put("accounts", arr);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "getAllAccountsJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void insertAccountJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            long id = db.insertAccountJs(
+                call.getString("name", ""),
+                call.getString("type", "other"),
+                call.getString("icon", "💰")
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", id > 0);
+            ret.put("id", id);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "insertAccountJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void updateAccountJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.updateAccountJs(
+                call.getLong("id", 0L),
+                call.getString("name", ""),
+                call.getString("type", "other"),
+                call.getString("icon", "💰"),
+                call.getDouble("initial_balance", 0.0)
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "updateAccountJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void deleteAccountJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.deleteAccountJs(call.getLong("id", 0L));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "deleteAccountJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getBudgetsJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            org.json.JSONArray arr = db.getBudgetsJs(call.getString("month", ""));
+            JSObject ret = new JSObject();
+            ret.put("budgets", arr);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "getBudgetsJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void setBudgetJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.setBudgetJs(
+                call.getString("category_id", ""),
+                call.getString("month", ""),
+                call.getDouble("amount", 0.0)
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "setBudgetJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getMerchantAccountIdJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            long id = db.getMerchantAccountId(call.getString("merchant", ""));
+            JSObject ret = new JSObject();
+            ret.put("account_id", id);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "getMerchantAccountIdJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void setMerchantAccountJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.setMerchantAccountJs(
+                call.getString("merchant", ""),
+                call.getLong("account_id", 0L)
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "setMerchantAccountJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getMerchantCategoryJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            String cid = db.getMerchantCategory(call.getString("merchant", ""));
+            JSObject ret = new JSObject();
+            ret.put("category_id", cid);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "getMerchantCategoryJs err", e);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void setMerchantCategoryJs(PluginCall call) {
+        try {
+            MoneyDbHelper db = new MoneyDbHelper(getContext());
+            boolean ok = db.setMerchantCategoryJs(
+                call.getString("merchant", ""),
+                call.getString("category_id", null)
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e("MoneyNotifier", "setMerchantCategoryJs err", e);
             call.reject(e.getMessage());
         }
     }

@@ -51,6 +51,17 @@
           <span class="sr-label">桌面组件</span>
           <span class="sr-chev">›</span>
         </div>
+        <!-- v2.3.x: 账户/自定义报表入口 -->
+        <div class="setting-row" @click="router.push('/accounts')">
+          <span class="sr-icon">👛</span>
+          <span class="sr-label">账户管理</span>
+          <span class="sr-chev">›</span>
+        </div>
+        <div class="setting-row" @click="router.push('/report')">
+          <span class="sr-icon">📈</span>
+          <span class="sr-label">自定义报表</span>
+          <span class="sr-chev">›</span>
+        </div>
       </div>
     </div>
 
@@ -67,14 +78,6 @@
             <span :class="['tp', theme === 'dark' ? 'active' : '']" @click.stop="changeTheme('dark')">🌙</span>
           </div>
         </div>
-        <div class="setting-row" @click="editBudget">
-          <span class="sr-icon">📊</span>
-          <span class="sr-label">月度预算</span>
-          <span class="sr-value">
-            {{ monthlyBudget > 0 ? '¥' + monthlyBudget : '未设置' }}
-            <span class="sr-chev">›</span>
-          </span>
-        </div>
       </div>
     </div>
 
@@ -86,12 +89,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookStore } from '../stores/book'
 import { openNotificationAccess, requestSmsPermission, checkNotificationAccess } from '../utils/notifier'
-import { showAlert, showConfirm, showPrompt, showToast } from '../utils/dialog'
-import { listTransactions, cleanDuplicates, getRecentRawTexts, clearNotificationLog } from '../db'
+import { showAlert, showConfirm, showToast } from '../utils/dialog'
+import { cleanDuplicates, getRecentRawTexts, clearNotificationLog } from '../db'
 import { APP_VERSION } from '../config/version.js'
 import { getTheme, setTheme, applyTheme } from '../utils/theme'
 
@@ -103,55 +106,16 @@ function onWidgetClick() {
   router.push('/widget')
 }
 
-// v2.2.61: 主题 + 预算
+// v2.2.61: 主题
 const theme = ref(getTheme())
 function changeTheme(t) {
   theme.value = t
   setTheme(t)
 }
 
-const BUDGET_KEY = 'moneybook_monthly_budget'
-const monthlyBudget = ref(parseInt(localStorage.getItem(BUDGET_KEY) || '0') || 0)
-function setBudget(v) {
-  monthlyBudget.value = v
-  try { localStorage.setItem(BUDGET_KEY, String(v)) } catch {}
-  // 通知其他视图预算已变更
-  window.dispatchEvent(new CustomEvent('moneybook:budget-changed', { detail: { value: v } }))
-}
-async function editBudget() {
-  const current = monthlyBudget.value > 0 ? String(monthlyBudget.value) : ''
-  const v = await showPrompt('设置每月总预算(元),填 0 表示不设', current, '月度预算', { placeholder: '如 3000', type: 'number' })
-  if (v === null) return
-  const n = Number(v) || 0
-  if (n < 0 || n > 999999) { showToast('金额需在 0~999999 之间', 'error'); return }
-  setBudget(n)
-  showToast(n > 0 ? `预算已设为 ¥${n}` : '已取消预算', 'success')
-}
-
-const monthTxs = ref([])
-const monthSpent = computed(() => {
-  let s = 0
-  for (const t of monthTxs.value) {
-    if (t.type === 'expense') s += t.amount
-  }
-  return s
-})
-const budgetPct = computed(() => monthlyBudget.value > 0 ? (monthSpent.value / monthlyBudget.value) * 100 : 0)
-const fmt = (n) => (n || 0).toFixed(2)
-
-async function loadMonthTxs() {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
-  const end = now.getTime()
-  monthTxs.value = await listTransactions({ startTs: start, endTs: end, limit: 5000 })
-}
-
 // 实时同步 system theme 变化(auto 模式)
 watch(() => store.ready, (ready) => {
-  if (ready) {
-    applyTheme(theme.value)
-    loadMonthTxs()
-  }
+  if (ready) applyTheme(theme.value)
 })
 
 const store = useBookStore()

@@ -26,7 +26,7 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
 
     private static final String TAG = "MoneyDb";
     private static final String DB_NAME = "moneybook.db";
-    private static final int VER = 1;
+    private static final int VER = 2;
 
     // v2.2.23 完整版分类规则(1000+ 关键词)
     // 用于在 Java 端做快速分类,即使 APP 没启动也能识别
@@ -577,6 +577,9 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_notif_time ON notifications(received_at);");
         // 灌入默认分类
         seedCategories(db);
+        // v2.3.0: 账户 / 预算 / 拆分明细 / 商户映射表
+        createExtTables(db);
+        seedDefaultAccount(db);
     }
 
     @Override
@@ -602,6 +605,11 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         } catch (Exception ignore) {}
         // 灌入默认分类(已存在就跳过)
         seedCategories(db);
+        // v2.3.0: 升级老库 — 加新列 + 新表
+        try { db.execSQL("ALTER TABLE transactions ADD COLUMN account_id INTEGER"); } catch (Exception ignore) {}
+        try { db.execSQL("ALTER TABLE transactions ADD COLUMN to_account_id INTEGER"); } catch (Exception ignore) {}
+        createExtTables(db);
+        seedDefaultAccount(db);
     }
 
     @Override
@@ -621,8 +629,66 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             }
             // 同时确保索引存在
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_tx_raw ON transactions(raw_text);");
+            // v2.3.0: 防御式补齐新列 + 扩展表
+            try { db.execSQL("ALTER TABLE transactions ADD COLUMN account_id INTEGER"); } catch (Exception ignore) {}
+            try { db.execSQL("ALTER TABLE transactions ADD COLUMN to_account_id INTEGER"); } catch (Exception ignore) {}
+            createExtTables(db);
+            seedDefaultAccount(db);
         } catch (Exception e) {
             Log.e(TAG, "检查表结构失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** v2.3.0: 扩展表(账户/预算/拆分/商户映射) */
+    private void createExtTables(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS accounts (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "name TEXT NOT NULL," +
+            "type TEXT DEFAULT 'other'," +
+            "icon TEXT DEFAULT ''," +
+            "initial_balance REAL DEFAULT 0," +
+            "sort INTEGER DEFAULT 0," +
+            "archived INTEGER DEFAULT 0," +
+            "created_at INTEGER DEFAULT 0)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS budgets (" +
+            "category_id TEXT NOT NULL," +
+            "month TEXT NOT NULL," +
+            "amount REAL DEFAULT 0," +
+            "allocated_at INTEGER DEFAULT 0," +
+            "PRIMARY KEY(category_id, month))");
+        db.execSQL("CREATE TABLE IF NOT EXISTS tx_splits (" +
+            "tx_id TEXT NOT NULL," +
+            "idx INTEGER NOT NULL," +
+            "category_id TEXT NOT NULL," +
+            "amount REAL NOT NULL," +
+            "PRIMARY KEY(tx_id, idx))");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_split_tx ON tx_splits(tx_id);");
+        db.execSQL("CREATE TABLE IF NOT EXISTS merchant_account_map (" +
+            "merchant TEXT PRIMARY KEY," +
+            "account_id INTEGER DEFAULT 0)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS merchant_category_map (" +
+            "merchant TEXT PRIMARY KEY," +
+            "category_id TEXT)");
+    }
+
+    /** v2.3.0: 首次建库灌入默认账户(仅当账户表为空时) */
+    private void seedDefaultAccount(SQLiteDatabase db) {
+        try {
+            Cursor c = db.rawQuery("SELECT COUNT(*) FROM accounts", null);
+            boolean empty = true;
+            if (c.moveToFirst()) empty = c.getInt(0) == 0;
+            c.close();
+            if (empty) {
+                ContentValues v = new ContentValues();
+                v.put("name", "默认账户");
+                v.put("type", "bank");
+                v.put("icon", "💳");
+                v.put("sort", 0);
+                v.put("created_at", System.currentTimeMillis());
+                db.insert("accounts", null, v);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "seedDefaultAccount err: " + t.getMessage(), t);
         }
     }
 
@@ -797,6 +863,11 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         v.put("occurred_at", occurredAt);
         v.put("created_at", System.currentTimeMillis());
         v.put("auto", 1);
+        // v2.3.0: 自动记账绑定商户所属账户(未绑定则不写,保持 null)
+        if (!"未知商户".equals(merchantNormalized)) {
+            long boundAcc = getMerchantAccountId(merchantNormalized);
+            if (boundAcc > 0) v.put("account_id", boundAcc);
+        }
         try {
             long rowId = db.insert("transactions", null, v);
             Log.d(TAG, "✓ 写入 transaction rowId=" + rowId +
@@ -1460,8 +1531,9 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         JSONArray arr = new JSONArray();
         try {
             SQLiteDatabase db = getReadableDatabase();
+            java.util.List<String> rowIds = new java.util.ArrayList<>();
             String sql = "SELECT id, type, amount, category_id, source, merchant, note, raw_text, " +
-                "occurred_at, created_at, auto FROM transactions";
+                "occurred_at, created_at, auto, account_id, to_account_id FROM transactions";
             java.util.List<String> args = new java.util.ArrayList<>();
             java.util.List<String> conds = new java.util.ArrayList<>();
             if (startTs != null && !startTs.isEmpty()) {
@@ -1495,16 +1567,61 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
                     o.put("occurred_at", c.getLong(8));
                     o.put("created_at", c.getLong(9));
                     o.put("auto", c.getInt(10));
+                    o.put("account_id", c.isNull(11) ? 0 : c.getLong(11));
+                    o.put("to_account_id", c.isNull(12) ? 0 : c.getLong(12));
+                    // v2.3.0: 收集 id,循环结束后批量查拆分明细(避免 N+1)
+                    rowIds.add(c.getString(0));
                     arr.put(o);
                 } catch (Exception e) {
                     Log.e(TAG, "row to json err", e);
                 }
             }
             c.close();
+            // v2.3.0: 批量填充拆分明细
+            if (!rowIds.isEmpty()) {
+                java.util.Map<String, JSONArray> splitMap = bulkLoadSplits(rowIds);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.optJSONObject(i);
+                    if (o == null) continue;
+                    JSONArray sp = splitMap.get(o.optString("id"));
+                    o.put("splits", sp != null ? sp : new JSONArray());
+                }
+            }
         } catch (Throwable t) {
             Log.e(TAG, "queryTransactions err: " + t.getMessage(), t);
         }
         return arr;
+    }
+
+    /** v2.3.0: 批量加载多笔交易的拆分明细(分段 IN 查询,避免每行一条 SQL) */
+    private java.util.Map<String, JSONArray> bulkLoadSplits(java.util.List<String> ids) {
+        java.util.Map<String, JSONArray> map = new java.util.HashMap<>();
+        if (ids == null || ids.isEmpty()) return map;
+        try {
+            SQLiteDatabase db = getReadableDatabase();
+            int BATCH = 400;
+            for (int start = 0; start < ids.size(); start += BATCH) {
+                int end = Math.min(start + BATCH, ids.size());
+                java.util.List<String> chunk = new java.util.ArrayList<>(ids.subList(start, end));
+                StringBuilder q = new StringBuilder("SELECT tx_id, category_id, amount FROM tx_splits WHERE tx_id IN (");
+                for (int i = 0; i < chunk.size(); i++) q.append(i == 0 ? "?" : ",?");
+                q.append(") ORDER BY tx_id, idx");
+                Cursor c = db.rawQuery(q.toString(), chunk.toArray(new String[0]));
+                while (c.moveToNext()) {
+                    String txId = c.getString(0);
+                    JSONArray arr = map.get(txId);
+                    if (arr == null) { arr = new JSONArray(); map.put(txId, arr); }
+                    JSONObject o = new JSONObject();
+                    o.put("category_id", c.getString(1));
+                    o.put("amount", c.getDouble(2));
+                    arr.put(o);
+                }
+                c.close();
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "bulkLoadSplits err", t);
+        }
+        return map;
     }
 
     private long parseTs(String s) {
@@ -1559,7 +1676,8 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
      */
     public boolean insertTransactionJs(String id, String type, double amount,
                                        String categoryId, String source, String merchant,
-                                       String note, String rawText, long occurredAt) {
+                                       String note, String rawText, long occurredAt,
+                                       long accountId, long toAccountId) {
         try {
             SQLiteDatabase db = getWritableDatabase();
             ContentValues v = new ContentValues();
@@ -1575,6 +1693,8 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             v.put("occurred_at", occurredAt);
             v.put("created_at", System.currentTimeMillis());
             v.put("auto", 0);
+            if (accountId > 0) v.put("account_id", accountId);
+            if (toAccountId > 0) v.put("to_account_id", toAccountId);
             long rowId = db.insertWithOnConflict("transactions", null, v, SQLiteDatabase.CONFLICT_IGNORE);
             boolean ok = rowId > 0;
             Log.d(TAG, "insertTransactionJs: rowId=" + rowId + " ok=" + ok);
@@ -1591,7 +1711,8 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
      * v2.2.3:更新交易
      */
     public boolean updateTransactionJs(String id, String type, double amount,
-                                       String categoryId, String merchant, String note, long occurredAt) {
+                                       String categoryId, String merchant, String note, long occurredAt,
+                                       long accountId, long toAccountId) {
         try {
             SQLiteDatabase db = getWritableDatabase();
             ContentValues v = new ContentValues();
@@ -1601,6 +1722,8 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             v.put("merchant", merchant == null ? "" : merchant);
             v.put("note", note == null ? "" : note);
             v.put("occurred_at", occurredAt);
+            if (accountId > 0) v.put("account_id", accountId); else v.putNull("account_id");
+            if (toAccountId > 0) v.put("to_account_id", toAccountId); else v.putNull("to_account_id");
             int n = db.update("transactions", v, "id=?", new String[]{id});
             Log.d(TAG, "updateTransactionJs: n=" + n);
             try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
@@ -1618,11 +1741,332 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         try {
             SQLiteDatabase db = getWritableDatabase();
             int n = db.delete("transactions", "id=?", new String[]{id});
+            db.delete("tx_splits", "tx_id=?", new String[]{id});
             Log.d(TAG, "deleteTransactionJs: n=" + n);
             try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
             return n > 0;
         } catch (Throwable t) {
             Log.e(TAG, "deleteTransactionJs err", t);
+            return false;
+        }
+    }
+
+    // ========== v2.3.0 扩展: 批量删除 / 批量改分类 / upsert / 拆分 ==========
+
+    /** 批量删除(返回删除条数) */
+    public int deleteTransactionsJs(String[] ids) {
+        int n = 0;
+        if (ids == null || ids.length == 0) return 0;
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            for (String id : ids) {
+                n += db.delete("transactions", "id=?", new String[]{id});
+                db.delete("tx_splits", "tx_id=?", new String[]{id});
+            }
+            try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
+        } catch (Throwable t) {
+            Log.e(TAG, "deleteTransactionsJs err", t);
+        }
+        return n;
+    }
+
+    /** 批量改分类(返回更新条数) */
+    public int batchSetCategoryJs(String[] ids, String categoryId) {
+        int n = 0;
+        if (ids == null || ids.length == 0) return 0;
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            ContentValues v = new ContentValues();
+            v.put("category_id", categoryId == null || categoryId.isEmpty() ? null : categoryId);
+            for (String id : ids) {
+                // 已有拆分的交易不覆盖拆分明细
+                Cursor c = db.rawQuery("SELECT COUNT(*) FROM tx_splits WHERE tx_id=?", new String[]{id});
+                boolean hasSplit = false;
+                if (c.moveToFirst()) hasSplit = c.getInt(0) > 0;
+                c.close();
+                if (!hasSplit) n += db.update("transactions", v, "id=?", new String[]{id});
+            }
+            try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
+        } catch (Throwable t) {
+            Log.e(TAG, "batchSetCategoryJs err", t);
+        }
+        return n;
+    }
+
+    /** upsert:存在则全量更新,否则插入(撤销/恢复用) */
+    public boolean upsertTransactionJs(String id, String type, double amount,
+                                       String categoryId, String source, String merchant,
+                                       String note, String rawText, long occurredAt,
+                                       long accountId, long toAccountId) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            if (id == null || id.isEmpty()) return false;
+            Cursor c = db.rawQuery("SELECT COUNT(*) FROM transactions WHERE id=?", new String[]{id});
+            boolean exists = false;
+            if (c.moveToFirst()) exists = c.getInt(0) > 0;
+            c.close();
+            boolean ok;
+            if (exists) {
+                ok = updateTransactionJs(id, type, amount, categoryId, merchant, note, occurredAt, accountId, toAccountId);
+            } else {
+                ok = insertTransactionJs(id, type, amount, categoryId, source, merchant, note, rawText, occurredAt, accountId, toAccountId);
+            }
+            // 恢复拆分
+            db.delete("tx_splits", "tx_id=?", new String[]{id});
+            return ok;
+        } catch (Throwable t) {
+            Log.e(TAG, "upsertTransactionJs err", t);
+            return false;
+        }
+    }
+
+    /** 保存拆分明细(先删后插),返回 true */
+    public boolean saveTxSplitsJs(String txId, JSONArray splits) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            db.beginTransaction();
+            try {
+                db.delete("tx_splits", "tx_id=?", new String[]{txId});
+                if (splits != null) {
+                    for (int i = 0; i < splits.length(); i++) {
+                        JSONObject s = splits.optJSONObject(i);
+                        if (s == null) continue;
+                        ContentValues v = new ContentValues();
+                        v.put("tx_id", txId);
+                        v.put("idx", i);
+                        v.put("category_id", s.optString("category_id", "other"));
+                        v.put("amount", s.optDouble("amount", 0));
+                        db.insert("tx_splits", null, v);
+                    }
+                }
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "saveTxSplitsJs err", t);
+            return false;
+        }
+    }
+
+    /** 取某条交易的拆分明细 */
+    public JSONArray getTxSplits(String txId) {
+        JSONArray arr = new JSONArray();
+        if (txId == null) return arr;
+        try {
+            Cursor c = getReadableDatabase().rawQuery(
+                "SELECT category_id, amount FROM tx_splits WHERE tx_id=? ORDER BY idx", new String[]{txId});
+            while (c.moveToNext()) {
+                JSONObject o = new JSONObject();
+                o.put("category_id", c.getString(0));
+                o.put("amount", c.getDouble(1));
+                arr.put(o);
+            }
+            c.close();
+        } catch (Throwable e) {
+            Log.e(TAG, "getTxSplits err", e);
+        }
+        return arr;
+    }
+
+    // ========== v2.3.0 账户 ==========
+
+    /** 所有账户(含实时余额), archived 账户也返回标记 */
+    public JSONArray getAllAccounts() {
+        JSONArray arr = new JSONArray();
+        try {
+            SQLiteDatabase db = getReadableDatabase();
+            Cursor c = db.rawQuery(
+                "SELECT id, name, type, icon, initial_balance, sort, archived, created_at FROM accounts ORDER BY sort, id", null);
+            while (c.moveToNext()) {
+                JSONObject o = new JSONObject();
+                long accId = c.getLong(0);
+                o.put("id", accId);
+                o.put("name", c.getString(1));
+                o.put("type", c.isNull(2) ? "other" : c.getString(2));
+                o.put("icon", c.isNull(3) ? "" : c.getString(3));
+                double init = c.getDouble(4);
+                o.put("initial_balance", init);
+                o.put("sort", c.getInt(5));
+                o.put("archived", c.getInt(6));
+                o.put("created_at", c.getLong(7));
+                o.put("balance", init + accountChange(db, accId));
+                arr.put(o);
+            }
+            c.close();
+        } catch (Throwable t) {
+            Log.e(TAG, "getAllAccounts err", t);
+        }
+        return arr;
+    }
+
+    /** 账户净变化 = 收入 - 支出 - 转出 + 转入 */
+    private double accountChange(SQLiteDatabase db, long accId) {
+        double d = 0;
+        try {
+            Cursor c1 = db.rawQuery(
+                "SELECT COALESCE((SELECT SUM(amount) FROM transactions WHERE type='income' AND account_id=?),0)" +
+                " - COALESCE((SELECT SUM(amount) FROM transactions WHERE type='expense' AND account_id=?),0)" +
+                " - COALESCE((SELECT SUM(amount) FROM transactions WHERE type='transfer' AND account_id=?),0)" +
+                " + COALESCE((SELECT SUM(amount) FROM transactions WHERE type='transfer' AND to_account_id=?),0)",
+                new String[]{String.valueOf(accId), String.valueOf(accId), String.valueOf(accId), String.valueOf(accId)});
+            if (c1.moveToFirst()) d = c1.getDouble(0);
+            c1.close();
+        } catch (Throwable t) {
+            Log.e(TAG, "accountChange err", t);
+        }
+        return d;
+    }
+
+    /** 新建账户,返回 id(失败返回 0) */
+    public long insertAccountJs(String name, String type, String icon) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            ContentValues v = new ContentValues();
+            v.put("name", name == null || name.isEmpty() ? "未命名账户" : name);
+            v.put("type", type == null ? "other" : type);
+            v.put("icon", icon == null ? "💰" : icon);
+            v.put("sort", 0);
+            v.put("created_at", System.currentTimeMillis());
+            return db.insert("accounts", null, v);
+        } catch (Throwable t) {
+            Log.e(TAG, "insertAccountJs err", t);
+            return 0;
+        }
+    }
+
+    public boolean updateAccountJs(long id, String name, String type, String icon, double initialBalance) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            ContentValues v = new ContentValues();
+            v.put("name", name == null || name.isEmpty() ? "未命名账户" : name);
+            v.put("type", type == null ? "other" : type);
+            v.put("icon", icon == null ? "💰" : icon);
+            v.put("initial_balance", initialBalance);
+            return db.update("accounts", v, "id=?", new String[]{String.valueOf(id)}) > 0;
+        } catch (Throwable t) {
+            Log.e(TAG, "updateAccountJs err", t);
+            return false;
+        }
+    }
+
+    /** 归档账户(不硬删,避免历史交易悬空) */
+    public boolean deleteAccountJs(long id) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            ContentValues v = new ContentValues();
+            v.put("archived", 1);
+            return db.update("accounts", v, "id=?", new String[]{String.valueOf(id)}) > 0;
+        } catch (Throwable t) {
+            Log.e(TAG, "deleteAccountJs err", t);
+            return false;
+        }
+    }
+
+    // ========== v2.3.0 预算 ==========
+
+    /** 某月各分类预算: [{category_id, amount}] */
+    public JSONArray getBudgetsJs(String month) {
+        JSONArray arr = new JSONArray();
+        try {
+            Cursor c = getReadableDatabase().rawQuery(
+                "SELECT category_id, amount FROM budgets WHERE month=?", new String[]{month == null ? "" : month});
+            while (c.moveToNext()) {
+                JSONObject o = new JSONObject();
+                o.put("category_id", c.getString(0));
+                o.put("amount", c.getDouble(1));
+                arr.put(o);
+            }
+            c.close();
+        } catch (Throwable t) {
+            Log.e(TAG, "getBudgetsJs err", t);
+        }
+        return arr;
+    }
+
+    /** 设置某分类某月预算(0 表示清除) */
+    public boolean setBudgetJs(String categoryId, String month, double amount) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            if (amount <= 0) {
+                db.delete("budgets", "category_id=? AND month=?", new String[]{categoryId, month});
+                return true;
+            }
+            ContentValues v = new ContentValues();
+            v.put("category_id", categoryId);
+            v.put("month", month);
+            v.put("amount", amount);
+            v.put("allocated_at", System.currentTimeMillis());
+            int n = db.update("budgets", v, "category_id=? AND month=?", new String[]{categoryId, month});
+            if (n == 0) db.insert("budgets", null, v);
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "setBudgetJs err", t);
+            return false;
+        }
+    }
+
+    // ========== v2.3.0 商户映射 ==========
+
+    /** 获取商户绑定的账户 id(0 = 未绑定) */
+    public long getMerchantAccountId(String merchant) {
+        if (merchant == null || merchant.isEmpty()) return 0;
+        try {
+            Cursor c = getReadableDatabase().rawQuery(
+                "SELECT account_id FROM merchant_account_map WHERE merchant=?", new String[]{merchant});
+            long v = 0;
+            if (c.moveToFirst()) v = c.getLong(0);
+            c.close();
+            return v;
+        } catch (Throwable t) {
+            Log.e(TAG, "getMerchantAccountId err", t);
+            return 0;
+        }
+    }
+
+    public boolean setMerchantAccountJs(String merchant, long accountId) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            ContentValues v = new ContentValues();
+            v.put("merchant", merchant == null ? "" : merchant);
+            v.put("account_id", accountId);
+            int n = db.update("merchant_account_map", v, "merchant=?", new String[]{merchant});
+            if (n == 0) db.insert("merchant_account_map", null, v);
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "setMerchantAccountJs err", t);
+            return false;
+        }
+    }
+
+    /** 获取商户记忆的分类(null = 未记忆) */
+    public String getMerchantCategory(String merchant) {
+        if (merchant == null || merchant.isEmpty()) return null;
+        try {
+            Cursor c = getReadableDatabase().rawQuery(
+                "SELECT category_id FROM merchant_category_map WHERE merchant=?", new String[]{merchant});
+            String v = null;
+            if (c.moveToFirst()) v = c.isNull(0) ? null : c.getString(0);
+            c.close();
+            return v;
+        } catch (Throwable t) {
+            Log.e(TAG, "getMerchantCategory err", t);
+            return null;
+        }
+    }
+
+    public boolean setMerchantCategoryJs(String merchant, String categoryId) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            ContentValues v = new ContentValues();
+            v.put("merchant", merchant == null ? "" : merchant);
+            v.put("category_id", categoryId);
+            int n = db.update("merchant_category_map", v, "merchant=?", new String[]{merchant});
+            if (n == 0) db.insert("merchant_category_map", null, v);
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "setMerchantCategoryJs err", t);
             return false;
         }
     }

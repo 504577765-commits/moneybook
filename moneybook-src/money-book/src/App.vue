@@ -23,6 +23,11 @@
         <span class="tab-label">统计</span>
         <span class="tab-indicator"></span>
       </router-link>
+      <router-link to="/budget" class="tab tappable">
+        <span class="tab-icon">💰</span>
+        <span class="tab-label">预算</span>
+        <span class="tab-indicator"></span>
+      </router-link>
       <router-link to="/me" class="tab tappable">
         <span class="tab-icon">👤</span>
         <span class="tab-label">我的</span>

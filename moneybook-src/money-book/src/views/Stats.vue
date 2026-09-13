@@ -21,6 +21,40 @@
       </div>
     </div>
 
+    <!-- v2.3.x: 净资产 -->
+    <div class="card summary-card fade-in-up" style="animation-delay: 0.08s">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>净资产</span>
+        <span class="link-all" @click="goAccounts">管理账户 ›</span>
+      </div>
+      <div class="nw-total">¥{{ fmtAmount(netWorth) }}</div>
+      <div class="nw-list">
+        <div v-for="a in activeAccounts" :key="a.id" class="nw-row">
+          <span class="nw-icon">{{ a.icon || '💰' }}</span>
+          <span class="nw-name">{{ a.name }}</span>
+          <span class="nw-balance">¥{{ fmtAmount(a.balance) }}</span>
+        </div>
+        <div v-if="!activeAccounts.length" class="muted">暂无账户</div>
+      </div>
+    </div>
+
+    <!-- v2.3.x: 现金流(近 12 月) -->
+    <div class="card chart-card fade-in-up" style="animation-delay: 0.1s">
+      <div class="card-title">💰 现金流</div>
+      <v-chart :option="cashflowOption" autoresize style="height: 220px;" v-if="cashflow.some(o => o.expense > 0 || o.income > 0)" />
+      <div v-else class="empty"><div class="ico">💸</div><div>暂无数据</div></div>
+    </div>
+
+    <!-- v2.3.x: 年累计 vs 去年同期 -->
+    <div class="card chart-card fade-in-up" style="animation-delay: 0.12s" v-if="yearCompare">
+      <div class="card-title">📅 {{ year }}年累计 vs 去年</div>
+      <div v-for="(row, i) in yearRows" :key="i" class="yc-row">
+        <span class="yc-label">{{ row.label }}</span>
+        <span class="yc-cur">{{ row.cur }}（去年 {{ row.last }}）</span>
+        <span :class="['yc-pct', row.delta===0 ? 'flat' : (row.isGood ? 'pos' : 'neg')]">{{ row.arrow }}{{ fmtAmount(row.delta) }} ({{ (row.pct >= 0 ? '+' : '') + row.pct.toFixed(1) }}%)</span>
+      </div>
+    </div>
+
     <!-- v2.2.67: 智能洞察 (顶部 1-2 条) -->
     <div v-if="topInsights.length" class="fade-in-up" style="animation-delay: 0.1s">
       <div v-for="(ins, i) in topInsights" :key="i"
@@ -126,12 +160,16 @@
         <span class="muted">多</span>
       </div>
     </div>
+
+    <!-- v2.3.x: 自定义报表入口 -->
+    <button class="report-btn fade-in-up" @click="goReport">📊 自定义报表</button>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBookStore } from '../stores/book'
+import { useRouter } from 'vue-router'
 import { fmtAmount } from '../utils/format'
 import { listTransactions } from '../db'
 import VChart from 'vue-echarts'
@@ -143,6 +181,7 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 use([CanvasRenderer, LineChart, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
 
 const store = useBookStore()
+const router = useRouter()
 const ranges = [
   { v: 'day', label: '日' },
   { v: 'week', label: '周' },
@@ -170,6 +209,7 @@ async function refresh() {
   const heatStart = heatEnd - 12 * 7 * 86400000
   heatmapTxs.value = await listTransactions({ startTs: heatStart, endTs: heatEnd, type: 'expense', limit: 10000 })
   await refreshMonthCompare() // v2.2.80: 同时刷新月对月对比
+  await loadCashflow()        // v2.3.x: 同时刷新现金流 + 年累计
 }
 watch(() => [store.currentRange, store.currentAnchor], refresh, { immediate: false })
 onMounted(refresh)
@@ -182,15 +222,119 @@ onUnmounted(() => window.removeEventListener('moneybook:tx-added', onTxAdded))
 const summary = computed(() => {
   let expense = 0, income = 0
   for (const t of txs.value) {
+    if (t.type === 'transfer') continue   // v2.3.x: 转账不计入收支
     if (t.type === 'expense') expense += t.amount
     else income += t.amount
   }
   return { expense, income, balance: income - expense }
 })
 
+// v2.3.x: 净资产
+const accounts = computed(() => store.accounts)
+const activeAccounts = computed(() => accounts.value.filter(a => !a.archived))
+const netWorth = computed(() => accounts.value.reduce((s, a) => s + (Number(a.balance) || 0), 0))
+
+// v2.3.x: 现金流(近 12 月) + 年累计 — 拉取去年初至今
+const cashflowTxs = ref([])
+const CASHFLOW_MONTHS = 12
+async function loadCashflow() {
+  const now = new Date()
+  const y1 = new Date(now.getFullYear() - 1, 0, 1).getTime()
+  const start = Math.min(
+    new Date(now.getFullYear(), now.getMonth() - (CASHFLOW_MONTHS - 1), 1).getTime(),
+    y1
+  )
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime()
+  cashflowTxs.value = await listTransactions({ startTs: start, endTs: end, limit: 10000 })
+}
+
+function sumParts(t, dirs) {
+  const isIncome = t.type === 'income'
+  const parts = (t.splits && t.splits.length) ? t.splits : [{ amount: t.amount }]
+  for (const p of parts) {
+    const amt = Number(p.amount) || 0
+    if (isIncome) dirs.income += amt; else dirs.expense += amt
+  }
+}
+
+const cashflow = computed(() => {
+  const now = new Date()
+  const arr = []
+  for (let i = CASHFLOW_MONTHS - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    arr.push({
+      ym: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,
+      label: `${d.getMonth()+1}月`, expense: 0, income: 0
+    })
+  }
+  const map = new Map(arr.map(x => [x.ym, x]))
+  for (const t of cashflowTxs.value) {
+    if (t.type === 'transfer') continue
+    const d = new Date(t.occurred_at)
+    const o = map.get(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`)
+    if (o) sumParts(t, o)
+  }
+  return arr
+})
+
+const cashflowOption = computed(() => ({
+  tooltip: { trigger: 'axis' },
+  legend: { data: ['支出', '收入'], bottom: 0, textStyle: { fontSize: 11 } },
+  grid: { left: 36, right: 16, top: 20, bottom: 32 },
+  xAxis: { type: 'category', data: cashflow.value.map(d => d.label), axisLabel: { fontSize: 10 } },
+  yAxis: { type: 'value', axisLabel: { fontSize: 10 } },
+  series: [
+    { name: '支出', data: cashflow.value.map(d => d.expense.toFixed(2)), type: 'line', smooth: true, lineStyle:{color:'#FF6B6B'}, itemStyle:{color:'#FF6B6B'}, areaStyle:{color:'rgba(255,107,107,0.12)'} },
+    { name: '收入', data: cashflow.value.map(d => d.income.toFixed(2)),  type: 'line', smooth: true, lineStyle:{color:'#26DE81'}, itemStyle:{color:'#26DE81'}, areaStyle:{color:'rgba(38,222,129,0.12)'} }
+  ]
+}))
+
+// v2.3.x: 年累计 vs 去年同期
+const year = computed(() => new Date().getFullYear())
+const yearCompare = computed(() => {
+  const now = new Date()
+  const y = now.getFullYear()
+  const pullStart = new Date(y - 1, 0, 1).getTime()
+  const thisYearStart = new Date(y, 0, 1).getTime()
+  const nowMid = now.getTime()
+  const elapsed = nowMid - thisYearStart
+  const lastPeriodEnd = pullStart + elapsed   // 去年同期同一时间点
+  const cy = { income: 0, expense: 0 }
+  const ly = { income: 0, expense: 0 }
+  for (const t of cashflowTxs.value) {
+    if (t.type === 'transfer') continue
+    const ts = t.occurred_at
+    if (ts >= thisYearStart && ts <= nowMid) sumParts(t, cy)
+    else if (ts >= pullStart && ts < lastPeriodEnd) sumParts(t, ly)
+  }
+  if (cy.expense === 0 && cy.income === 0 && ly.expense === 0 && ly.income === 0) return null
+  cy.balance = cy.income - cy.expense
+  ly.balance = ly.income - ly.expense
+  return { cy, ly, hasData: true }
+})
+const yearRows = computed(() => {
+  const v = yearCompare.value
+  if (!v) return []
+  const pct = (cur, base) => base > 0 ? ((cur - base) / base) * 100 : (base === 0 ? 0 : (cur > 0 ? 100 : 0))
+  const rows = [
+    { label: '支出', cur: '¥' + fmtAmount(v.cy.expense), last: '¥' + fmtAmount(v.ly.expense),
+      delta: v.cy.expense - v.ly.expense, pct: pct(v.cy.expense, v.ly.expense), isGood: false },
+    { label: '收入', cur: '¥' + fmtAmount(v.cy.income), last: '¥' + fmtAmount(v.ly.income),
+      delta: v.cy.income - v.ly.income, pct: pct(v.cy.income, v.ly.income), isGood: true },
+    { label: '结余', cur: '¥' + fmtAmount(v.cy.balance), last: '¥' + fmtAmount(v.ly.balance),
+      delta: v.cy.balance - v.ly.balance, pct: pct(v.cy.balance, v.ly.balance), isGood: true }
+  ]
+  return rows.map(r => ({ ...r, arrow: r.delta > 0 ? '▲' : (r.delta < 0 ? '▼' : '') }))
+})
+
+// v2.3.x: 导航
+function goAccounts() { router.push('/accounts') }
+function goReport() { router.push('/report') }
+
 const trendData = computed(() => {
   const map = new Map()
   for (const t of txs.value) {
+    if (t.type === 'transfer') continue   // v2.3.x: 转账不计入
     const d = new Date(t.occurred_at)
     const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     if (!map.has(k)) map.set(k, { day: k, expense: 0, income: 0 })
@@ -465,4 +609,39 @@ const calendarData = computed(() => {
   justify-content: flex-end;
 }
 .hm-legend .hm-cell { width: 8px; height: 8px; }
+
+/* === v2.3.x: 净资产 === */
+.link-all { font-size: 12px; color: var(--primary); font-weight: 500; }
+.nw-total { font-size: 26px; font-weight: 800; color: var(--text-1); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+.nw-list { display: flex; flex-direction: column; }
+.nw-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-light); }
+.nw-row:last-child { border-bottom: none; }
+.nw-icon {
+  width: 30px; height: 30px; border-radius: 8px; background: var(--primary-bg);
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
+}
+.nw-name { flex: 1; font-size: 13px; color: var(--text-2); }
+.nw-balance { font-size: 13px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; }
+
+/* === v2.3.x: 年累计 === */
+.yc-row { display: flex; align-items: baseline; gap: 6px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border-light); }
+.yc-row:last-child { border-bottom: none; }
+.yc-label { width: 34px; color: var(--text-3); flex-shrink: 0; }
+.yc-cur { flex: 1; color: var(--text-2); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-cur b { color: var(--text-1); font-weight: 700; }
+.yc-pct { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.yc-pct.pos { color: #10B981; }
+.yc-pct.neg { color: #EF4444; }
+.yc-pct.flat { color: var(--text-3); }
+
+/* === v2.3.x: 自定义报表按钮 === */
+.report-btn {
+  display: block; width: 100%;
+  background: var(--gradient); color: #fff;
+  border: none; border-radius: var(--radius-lg);
+  padding: 13px; font-size: 15px; font-weight: 700;
+  box-shadow: var(--shadow-lg); cursor: pointer;
+  margin-top: 14px;
+}
+.report-btn:active { transform: scale(0.98); }
 </style>

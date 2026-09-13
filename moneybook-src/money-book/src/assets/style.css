@@ -9,8 +9,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: contain;
-  font-size: 14px;
-  line-height: 1.5;
+  /* v2.3.0: 字大疏朗 */
+  font-size: 15px;
+  line-height: 1.55;
 }
 button { font-family: inherit; cursor: pointer; border: none; background: none; }
 input, textarea { font-family: inherit; }
@@ -23,13 +24,16 @@ a { text-decoration: none; color: inherit; }
   letter-spacing: -0.3px;
 }
 
-/* === 颜色系统 v2.2.46 === */
+/* === 颜色系统 v2.3.0 (紫渐变升级版) === */
 :root {
   /* 主色 - 紫蓝渐变 */
   --primary: #6366F1;
   --primary-dark: #4F46E5;
   --primary-light: #A5B4FC;
   --primary-bg: #EEF2FF;
+  --gradient: linear-gradient(135deg, #6366F1 0%, #8B5CF6 55%, #EC4899 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(99,102,241,.12), rgba(236,72,153,.10));
+  --text-on-grad: #FFFFFF;
 
   /* 功能色 */
   --success: #10B981;
@@ -41,31 +45,36 @@ a { text-decoration: none; color: inherit; }
   --info: #3B82F6;
   --info-bg: #DBEAFE;
 
+  /* 预算色阶 */
+  --budget-ok: #10B981;
+  --budget-warn: #F59E0B;
+  --budget-over: #EF4444;
+
   /* 中性色 */
-  --text-1: #0F172A;
-  --text-2: #475569;
-  --text-3: #94A3B8;
+  --text-1: #141B34;
+  --text-2: #4D5A77;
+  --text-3: #9AA6BD;
   --text-4: #CBD5E1;
 
-  --bg-1: #F8FAFC;
-  --bg-2: #EEF2FF;
+  --bg-1: #F7F8FD;
+  --bg-2: #EEF1FF;
   --card: #FFFFFF;
-  --border: #E2E8F0;
-  --border-light: #F1F5F9;
+  --border: #E6EAF6;
+  --border-light: #F1F4FB;
 
-  /* 阴影 */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow: 0 2px 4px rgba(15, 23, 42, 0.04), 0 4px 8px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 10px 20px -3px rgba(99, 102, 241, 0.12), 0 4px 8px -4px rgba(99, 102, 241, 0.08);
-  --shadow-xl: 0 20px 40px -8px rgba(99, 102, 241, 0.18), 0 8px 16px -8px rgba(99, 102, 241, 0.10);
+  /* 阴影(带紫调,更柔和) */
+  --shadow-sm: 0 1px 2px rgba(72, 80, 150, 0.05), 0 2px 6px rgba(72, 80, 150, 0.05);
+  --shadow: 0 2px 6px rgba(72, 80, 150, 0.06), 0 6px 14px rgba(72, 80, 150, 0.06);
+  --shadow-md: 0 6px 12px -2px rgba(72, 80, 150, 0.10), 0 3px 6px -2px rgba(72, 80, 150, 0.06);
+  --shadow-lg: 0 12px 24px -4px rgba(99, 102, 241, 0.16), 0 5px 10px -4px rgba(99, 102, 241, 0.10);
+  --shadow-xl: 0 24px 48px -8px rgba(99, 102, 241, 0.22), 0 10px 20px -8px rgba(99, 102, 241, 0.12);
 
   /* 圆角 */
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 24px;
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
 
   /* 动画 */
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -363,15 +372,16 @@ a { text-decoration: none; color: inherit; }
 
 /* === v2.2.61/69 暗色模式 (重写) === */
 :root[data-theme="dark"] {
-  --bg-1: #0F172A;
-  --bg-2: #1E293B;
-  --card: #1E293B;
-  --border: #334155;
-  --border-light: #334155;
-  --text-1: #F1F5F9;
-  --text-2: #CBD5E1;
-  --text-3: #94A3B8;
-  --text-4: #64748B;
+  /* v2.3.0: 深色紫调升级 */
+  --bg-1: #101425;
+  --bg-2: #1B2038;
+  --card: #1E2440;
+  --border: #333B5C;
+  --border-light: #2A3050;
+  --text-1: #F2F4FC;
+  --text-2: #C9D0E6;
+  --text-3: #8E97B8;
+  --text-4: #5D6690;
   --primary-bg: #312E81;
   --primary-dark: #A5B4FC;
   --success-bg: #064E3B;
@@ -382,15 +392,15 @@ a { text-decoration: none; color: inherit; }
   --warn-card-border: #92400E;
   --info-card-bg: #1E1B4B;
   --info-card-border: #4338CA;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 20px -3px rgba(0, 0, 0, 0.4), 0 4px 8px -4px rgba(0, 0, 0, 0.3);
-  --shadow-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.5), 0 8px 16px -8px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow: 0 2px 4px rgba(0, 0, 0, 0.25), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 10px 20px -3px rgba(0, 0, 0, 0.45), 0 4px 8px -4px rgba(0, 0, 0, 0.35);
+  --shadow-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.55), 0 8px 16px -8px rgba(0, 0, 0, 0.4);
 }
 /* body 必须也用 var 才能跟暗色 */
 :root[data-theme="dark"] body {
-  background: linear-gradient(180deg, #0F172A 0%, #1E293B 100%) !important;
+  background: linear-gradient(180deg, #101425 0%, #1B2038 100%) !important;
   color: var(--text-1) !important;
 }
 :root[data-theme="dark"] .page-header { color: var(--text-1); }

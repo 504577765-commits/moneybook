@@ -9,8 +9,8 @@
       <div class="greet-emoji">{{ greetEmoji }}</div>
     </div>
 
-    <!-- 合并 Hero + 预算条 -->
-    <div class="hero fade-in-up" style="animation-delay: 0.05s">
+    <!-- 仪表盘: hero(本月已花) + 卡片网格 -->
+    <div class="hero fade-in-up" style="animation-delay: 0.05s" @click="goStats">
       <div class="hero-bg"></div>
       <div class="hero-pattern"></div>
       <div class="hero-content">
@@ -33,17 +33,48 @@
             </div>
           </div>
         </div>
-        <!-- 内嵌预算条 -->
-        <div v-if="monthlyBudget > 0" class="hero-budget">
-          <div class="hb-text">
-            <span>本月已花 ¥{{ monthSpent.toFixed(0) }}</span>
-            <span v-if="budgetPct > 100" style="color:#FECACA;font-weight:700;">⚠️ 超</span>
-            <span v-else>剩 ¥{{ (monthlyBudget - monthSpent).toFixed(0) }}</span>
-          </div>
-          <div class="hb-bar">
-            <div :class="['hb-fill', budgetPct > 100 ? 'over' : budgetPct > 80 ? 'warn' : '']"
-                 :style="`width: ${Math.min(budgetPct, 100)}%`"></div>
-          </div>
+        <div class="hero-foot">
+          <span class="hero-hint">查看统计 ›</span>
+          <button v-if="store.canUndo()" class="hero-undo tappable" @click.stop="undoLast">↩ 撤销</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片网格 -->
+    <div class="dash-grid fade-in-up" style="animation-delay: 0.08s">
+      <div class="grid-card tappable" @click="goStats">
+        <div class="gc-label">本月收入</div>
+        <div class="gc-val gc-pos">¥{{ fmtAmount(monthIncome) }}</div>
+      </div>
+      <div class="grid-card tappable" @click="goAccounts">
+        <div class="gc-label">净资产</div>
+        <div class="gc-val">¥{{ fmtAmount(netWorth) }}</div>
+      </div>
+      <div class="grid-card tappable wide" @click="goBudget">
+        <div class="gc-head">
+          <span class="gc-label" style="margin:0;">预算进度</span>
+          <span class="gc-right" v-if="totalBudget > 0">
+            <span :class="budgetTone">
+              {{ budgetStateLabel }} ¥{{ fmtAmount(budgetSpent) }} / ¥{{ fmtAmount(totalBudget) }}
+            </span>
+          </span>
+        </div>
+        <div v-if="budgetReady && totalBudget > 0" class="gc-progress">
+          <div :class="['gc-fill', budgetTone]" :style="{ width: Math.min(budgetPct, 100) + '%' }"></div>
+        </div>
+        <div v-else-if="budgetReady" class="gc-empty">去「预算」页为分类分配本月额度 →</div>
+        <div v-else class="gc-empty muted">预算加载中…</div>
+      </div>
+    </div>
+
+    <!-- 分类速览 TOP3 -->
+    <div v-if="topCats.length" class="card cat-quick fade-in-up" style="animation-delay: 0.12s" @click="goStats">
+      <div class="card-title">🔥 本月支出 TOP</div>
+      <div class="cat-quick-list">
+        <div v-for="c in topCats" :key="c.id" class="cq-item">
+          <span class="cq-icon" :style="{ background: c.color + '22' }">{{ c.icon }}</span>
+          <span class="cq-name">{{ c.name }}</span>
+          <span class="cq-amt">¥{{ fmtAmount(c.amount) }}</span>
         </div>
       </div>
     </div>
@@ -89,8 +120,9 @@
                 <div class="recent-time">{{ fmtTime(tx.occurred_at, 'HH:mm') }} · {{ catName(tx.category_id, tx.type) }}</div>
                 <div v-if="tx.note" class="note-badge">{{ tx.note }}</div>
               </div>
-              <div :class="['recent-amount', tx.type === 'expense' ? 'neg' : 'pos']">
-                {{ tx.type === 'expense' ? '-' : '+' }}¥{{ fmtAmount(tx.amount) }}
+              <div :class="['recent-amount', tx.type === 'expense' ? 'neg' : tx.type === 'income' ? 'pos' : 'transfer']">
+                <template v-if="tx.type === 'transfer'">↔ ¥{{ fmtAmount(tx.amount) }}</template>
+                <template v-else>{{ tx.type === 'expense' ? '-' : '+' }}¥{{ fmtAmount(tx.amount) }}</template>
               </div>
             </div>
           </div>
@@ -117,13 +149,28 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBookStore } from '../stores/book'
+import { useBudgetStore } from '../stores/budget'
 import { fmtAmount, fmtTime, groupByDate } from '../utils/format'
 import { listTransactions } from '../db'
 import dayjs from 'dayjs'
+import { useRouter } from 'vue-router'
+import { showToast } from '../utils/dialog'
 import EditTxDialog from '../components/EditTxDialog.vue'
 import AddTxDialog from '../components/AddTxDialog.vue'
 
 const store = useBookStore()
+const budget = useBudgetStore()
+const router = useRouter()
+
+// v2.3.x: 仪表盘导航
+function goStats() { router.push('/stats') }
+function goBudget() { router.push('/budget') }
+function goAccounts() { router.push('/accounts') }
+async function undoLast() {
+  const ok = await store.undo()
+  loadMonthTxs()
+  showToast(ok ? '已撤销上一步操作' : '无可撤销操作', ok ? 'success' : 'info')
+}
 const ranges = [
   { v: 'day', label: '日' },
   { v: 'week', label: '周' },
@@ -134,7 +181,8 @@ const summary = computed(() => {
   let expense = 0, income = 0
   for (const t of store.transactions) {
     if (t.type === 'expense') expense += t.amount
-    else income += t.amount
+    else if (t.type === 'income') income += t.amount
+    // transfer 不计入收支
   }
   return { expense, income, balance: income - expense }
 })
@@ -240,8 +288,35 @@ const todayStr = computed(() => {
   return `${d.getMonth() + 1}月${d.getDate()}日 周${['日','一','二','三','四','五','六'][d.getDay()]}`
 })
 
-// v2.2.71: 月度预算
-const monthlyBudget = ref(parseInt(localStorage.getItem('moneybook_monthly_budget') || '0') || 0)
+// v2.3.x: 月度预算 — 改用 budget store(分类预算合计)
+const budgetReady = ref(false)
+const monthIncome = computed(() => {
+  let s = 0
+  for (const t of monthTxs.value) {
+    if (t.type === 'income') s += t.amount
+  }
+  return s
+})
+// v2.3.x: 净资产 = 所有账户余额总和
+const netWorth = computed(() => store.accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0))
+
+const totalBudget = computed(() => budget.totalBudget || 0)
+const budgetSpent = computed(() => budget.monthSpent || 0)
+const budgetPct = computed(() => totalBudget.value > 0 ? (budgetSpent.value / totalBudget.value) * 100 : 0)
+const budgetTone = computed(() => budgetPct.value > 100 ? 'over' : budgetPct.value > 80 ? 'warn' : 'ok')
+const budgetStateLabel = computed(() => budgetPct.value > 100 ? '⚠️ 超支' : '已花')
+
+// v2.3.x: 分类速览 TOP3(book.stats.byCat + categories)
+const topCats = computed(() => {
+  const byCat = store.stats.byCat || {}
+  return Object.entries(byCat)
+    .map(([cid, amount]) => {
+      const c = store.categories.expense?.find(x => x.id === cid)
+      return { id: cid, name: c?.name || '其他', icon: c?.icon || '📦', color: c?.color || '#94A3B8', amount }
+    })
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 3)
+})
 const monthTxs = ref([])
 const monthSpent = computed(() => {
   let s = 0
@@ -250,7 +325,6 @@ const monthSpent = computed(() => {
   }
   return s
 })
-const budgetPct = computed(() => monthlyBudget.value > 0 ? (monthSpent.value / monthlyBudget.value) * 100 : 0)
 // v2.2.80: 当月已花跟随当前查看的月份(currentAnchor)刷新,切月/跨月自动重拉
 async function loadMonthTxs() {
   const now = new Date()
@@ -273,16 +347,16 @@ watch([() => store.currentAnchor, () => store.currentRange], () => {
   if (store.ready) loadMonthTxs()
 })
 
-// v2.2.75: 监听预算变化(从 Me.vue 设置后)
+// v2.3.x: 监听预算变化(兼容旧事件 — 刷新 budget store)
 function onBudgetChanged(e) {
-  monthlyBudget.value = e.detail.value
-  loadMonthTxs()
+  budget.load()
 }
 window.addEventListener('moneybook:budget-changed', onBudgetChanged)
 
 // v2.2.76: 新交易入账后,重拉月数据,预算进度实时更新
 function onTxAdded() {
   loadMonthTxs()
+  budget.load()
   store.refreshTransactions() // 同时刷新当前 range 列表
 }
 window.addEventListener('moneybook:tx-added', onTxAdded)
@@ -296,6 +370,8 @@ onMounted(() => {
     store.refreshTransactions()
     loadMonthTxs() // v2.2.80: 修复从统计页返回后"本月已花"归零
   }
+  // v2.3.x: 加载预算 store(budget store 直接查库,无需等 book.ready)
+  budget.load().then(() => { budgetReady.value = true })
 })
 
 // v2.2.77: 编辑 + 手动记账弹窗
@@ -381,18 +457,57 @@ async function onAdded() {
 .hs-val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .hs-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.25); }
 
-/* === v2.2.71 内嵌预算条 === */
-.hero-budget {
-  background: rgba(0,0,0,0.15);
-  border-radius: 10px;
-  padding: 8px 12px;
-  margin-top: 4px;
+/* === v2.3.x 仪表盘网格 === */
+.hero-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 10px;
 }
-.hb-text { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; opacity: 0.95; }
-.hb-bar { height: 4px; background: rgba(255,255,255,0.2); border-radius: 999px; overflow: hidden; }
-.hb-fill { height: 100%; background: rgba(255,255,255,0.85); border-radius: 999px; transition: width 0.4s; }
-.hb-fill.warn { background: #FBBF24; }
-.hb-fill.over { background: #F87171; }
+.hero-hint { font-size: 11px; opacity: 0.85; }
+.hero-undo {
+  background: rgba(255,255,255,0.16); color: #fff;
+  border: 1px solid rgba(255,255,255,0.3);
+  font-size: 12px; padding: 4px 12px; border-radius: 999px;
+}
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.grid-card {
+  background: var(--card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.grid-card:active { transform: scale(0.98); }
+.grid-card.wide { grid-column: 1 / -1; }
+.gc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.gc-label { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+.gc-right { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gc-right .ok { color: var(--budget-ok); }
+.gc-right .warn { color: var(--budget-warn); }
+.gc-right .over { color: var(--budget-over); }
+.gc-val { font-size: 22px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.gc-val.gc-pos { color: var(--success); }
+.gc-progress { height: 6px; background: var(--bg-2); border-radius: 999px; overflow: hidden; }
+.gc-fill { height: 100%; background: var(--budget-ok); border-radius: 999px; transition: width 0.4s; }
+.gc-fill.warn { background: var(--budget-warn); }
+.gc-fill.over { background: var(--budget-over); }
+.gc-empty { font-size: 12px; color: var(--text-3); }
+
+/* === v2.3.x 分类速览 TOP3 === */
+.cat-quick { margin-bottom: 12px; cursor: pointer; }
+.cat-quick-list { display: flex; flex-direction: column; gap: 8px; }
+.cq-item { display: flex; align-items: center; gap: 8px; }
+.cq-icon {
+  width: 30px; height: 30px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
+}
+.cq-name { flex: 1; font-size: 13px; color: var(--text-2); }
+.cq-amt { font-size: 13px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; }
 
 /* === v2.2.71 时间范围 === */
 .range-row {

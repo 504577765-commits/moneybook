@@ -33,6 +33,10 @@ parser-test/out/
 # 测试残留(截图/日志)
 *.png
 
+# 局域网部署临时脚本 / 本地下载的桌面程序
+.tmp-serve/
+Actual-*.exe
+
 # 系统文件
 Thumbs.db
 .DS_Store

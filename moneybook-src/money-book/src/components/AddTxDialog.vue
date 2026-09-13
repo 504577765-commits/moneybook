@@ -27,7 +27,16 @@
           <!-- 商户 -->
           <div class="add-field">
             <label class="add-label">商户</label>
-            <input v-model="form.merchant" class="add-inp" placeholder="如:美团 / 工资" maxlength="32">
+            <input v-model="form.merchant" class="add-inp" placeholder="如:美团 / 工资" maxlength="32" @blur="onMerchantBlur">
+          </div>
+
+          <!-- 账户 -->
+          <div class="add-field" v-if="store.accounts.length">
+            <label class="add-label">账户</label>
+            <select v-model.number="form.account_id" class="add-inp">
+              <option :value="0">未选</option>
+              <option v-for="a in store.accounts" :key="a.id" :value="a.id">{{ a.icon }} {{ a.name }}</option>
+            </select>
           </div>
 
           <!-- 分类 -->
@@ -73,7 +82,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { useBookStore } from '../stores/book'
-import { insertTransaction } from '../db'
+import { insertTransaction, getMerchantCategory } from '../db'
 import { showToast } from '../utils/dialog'
 
 const props = defineProps({ visible: { type: Boolean, default: false } })
@@ -88,8 +97,24 @@ const form = reactive({
   amount: '',
   merchant: '',
   category_id: 0,
-  note: ''
+  note: '',
+  account_id: 0
 })
+
+// 商户 blur 时: 若已有该商户记忆分类则自动带出
+async function onMerchantBlur() {
+  const m = (form.merchant || '').trim()
+  if (!m) return
+  try {
+    const cid = await getMerchantCategory(m)
+    if (cid) {
+      form.category_id = cid
+      showToast('已按上次分类此商户', 'info')
+    }
+  } catch (e) {
+    console.error('getMerchantCategory err', e)
+  }
+}
 
 // 切换类型时,重置分类为该类型第一个
 watch(() => form.type, (t) => {
@@ -131,30 +156,27 @@ async function onSave() {
   }
   saving.value = true
   try {
-    const ok = await insertTransaction({
+    // v2.3.0: 走 store.addTransactionTx(自动生成 id、入撤销栈、刷新、派发事件)
+    const r = await store.addTransactionTx({
       type: form.type,
       amount: Number(form.amount),
       category_id: form.category_id,
       merchant: form.merchant,
       note: form.note,
       source: 'manual',
-      auto: 0
+      account_id: form.account_id || 0
     })
-    if (ok) {
+    if (r.ok) {
       showToast('已记一笔', 'success')
-      // v2.2.79: 手动记账后派发 tx-added 事件,触发 Home 预算进度更新
-      window.dispatchEvent(new CustomEvent('moneybook:tx-added', {
-        detail: {
-          preAmount: Number(form.amount),
-          preType: form.type,
-          preMerchant: form.merchant || '手动记账',
-          source: 'manual'
-        }
-      }))
+      // v2.2.78: 记忆商户→分类(仅当填了商户)
+      if (form.merchant && form.merchant !== '未知商户') {
+        await store.rememberMerchantCategory(form.merchant, form.category_id)
+      }
       // 重置
       form.amount = ''
       form.merchant = ''
       form.note = ''
+      form.account_id = 0
       emit('saved')
       emit('close')
     } else {

@@ -1,6 +1,12 @@
 <template>
   <div class="page records">
-    <div class="page-header">账单</div>
+    <div class="page-header">
+      <span>账单</span>
+      <span class="header-actions">
+        <span v-if="store.canUndo()" class="undo-btn" @click="onUndo">↩ 撤销</span>
+        <span v-if="!batchMode" class="organize-btn" @click="enterBatch">整理</span>
+      </span>
+    </div>
 
     <div class="filter-bar card">
       <div class="filter-row">
@@ -36,7 +42,12 @@
         </span>
       </div>
       <div class="card tx-list">
-        <div v-for="tx in g.items" :key="tx.id" class="tx-item tappable" @click="openEdit(tx)">
+        <div v-for="tx in g.items" :key="tx.id" class="tx-item tappable"
+             @click="onItemClick(tx)"
+             @mousedown="onLongStart($event, tx)" @mouseup="onLongEnd" @mouseleave="onLongEnd"
+             @touchstart.passive="onTouchStart(tx)" @touchend.passive="onTouchEnd" @touchmove.passive="onLongEnd"
+             @contextmenu.prevent="onContextMenu(tx)">
+          <div v-if="batchMode" :class="['tx-check', isSelected(tx.id) ? 'on' : '']" @click.stop="toggleSelect(tx)">✓</div>
           <div class="cat-icon" :style="{background: catColor(tx.category_id, tx.type)}">
             <span class="cat-emoji">{{ catIcon(tx.category_id, tx.type) }}</span>
           </div>
@@ -45,12 +56,36 @@
             <div class="tx-meta">
               <span class="tx-cat">{{ catName(tx.category_id, tx.type) }}</span>
               <span v-if="tx.auto" class="auto-tag">自动</span>
+              <span v-if="tx.type === 'transfer'" class="acct-tag transfer">转账</span>
+              <span v-else-if="accOf(tx.account_id)" class="acct-tag">{{ accOf(tx.account_id).icon }} {{ accOf(tx.account_id).name }}</span>
               <span class="tx-time">· {{ fmtTime(tx.occurred_at, 'HH:mm') }}</span>
             </div>
             <div v-if="tx.note" class="note-badge">{{ tx.note }}</div>
           </div>
           <div :class="['tx-amount', 'amount-num', tx.type === 'expense' ? 'amount-neg' : 'amount-pos']">
             {{ tx.type === 'expense' ? '-' : '+' }}{{ fmtAmount(tx.amount) }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.3.0: 批量底部操作条 -->
+    <div v-if="batchMode" class="batch-bar">
+      <span class="batch-count">已选 {{ selected.size }} 项</span>
+      <button class="batch-btn" @click="toggleSelectAll">全选/反选</button>
+      <button class="batch-btn" @click="onBatchCategory">改分类</button>
+      <button class="batch-btn danger" @click="onBatchDelete">删除</button>
+      <button class="batch-btn" @click="exitBatch">退出</button>
+    </div>
+
+    <!-- v2.3.0: 批量改分类选择器 -->
+    <div v-if="catPickerVisible" class="cat-picker-overlay" @click.self="catPickerVisible = false">
+      <div class="cat-picker-card">
+        <div class="cp-title">选择分类</div>
+        <div class="cp-grid">
+          <div v-for="c in allCategories" :key="c.id" class="cp-item" @click="applyCategory(c.id)">
+            <span class="cp-emoji">{{ c.icon }}</span>
+            <span class="cp-name">{{ c.name }}</span>
           </div>
         </div>
       </div>
@@ -65,6 +100,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useBookStore } from '../stores/book'
 import { fmtAmount, fmtTime, groupByDate } from '../utils/format'
 import { listTransactions } from '../db'
+import { showToast, showConfirm } from '../utils/dialog'
 import dayjs from 'dayjs'
 import EditTxDialog from '../components/EditTxDialog.vue'
 
@@ -138,14 +174,227 @@ function openEdit(tx) { editingTx.value = { ...tx }; editVisible.value = true }
 function closeEdit() { editVisible.value = false }
 async function onSaved(updated) {
   // 立即更新本地数据
-  const idx = txs.value.findIndex(t => t.id === updated.id)
-  if (idx >= 0) txs.value[idx] = { ...txs.value[idx], ...updated }
+  const idx = all.value.findIndex(t => t.id === updated.id)
+  if (idx >= 0) all.value[idx] = { ...all.value[idx], ...updated }
   await store.refreshTransactions()
 }
+
+// ===== v2.3.0: 批量管理 =====
+const batchMode = ref(false)
+const selected = ref(new Set())
+const catPickerVisible = ref(false)
+let longPressTimer = null
+
+const allCategories = computed(() => [...store.categories.expense, ...store.categories.income])
+
+function accOf(accountId) {
+  if (!accountId) return null
+  return store.accountMap[accountId]
+}
+function isSelected(id) { return selected.value.has(id) }
+
+function enterBatch() {
+  batchMode.value = true
+  selected.value = new Set()
+  catPickerVisible.value = false
+}
+function exitBatch() {
+  batchMode.value = false
+  selected.value = new Set()
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+}
+
+function onItemClick(tx) {
+  if (batchMode.value) { toggleSelect(tx); return }
+  openEdit(tx)
+}
+function toggleSelect(tx) {
+  const s = new Set(selected.value)
+  if (s.has(tx.id)) s.delete(tx.id); else s.add(tx.id)
+  selected.value = s
+}
+// 全选/反选
+function toggleSelectAll() {
+  const ids = filtered.value.map(t => t.id)
+  const allSel = ids.every(id => selected.value.has(id))
+  const s = new Set(selected.value)
+  if (allSel) { ids.forEach(id => s.delete(id)) }
+  else { ids.forEach(id => s.add(id)) }
+  selected.value = s
+}
+
+const selectedTxs = computed(() => all.value.filter(t => selected.value.has(t.id)))
+
+async function onBatchCategory() {
+  if (!selectedTxs.value.length) { showToast('请先选择交易', 'error'); return }
+  catPickerVisible.value = true
+}
+async function applyCategory(categoryId) {
+  catPickerVisible.value = false
+  const txs = selectedTxs.value
+  if (!txs.length) return
+  const n = await store.batchSetCategoryTx(txs, categoryId)
+  showToast(`已更新分类 ${n} 笔`, 'success')
+  await refresh()
+  exitBatch()
+}
+
+async function onBatchDelete() {
+  const txs = selectedTxs.value
+  if (!txs.length) { showToast('请先选择交易', 'error'); return }
+  const ok = await showConfirm(`确定删除选中的 ${txs.length} 笔交易吗？可撤销。`, '批量删除', {
+    confirmText: '删除', cancelText: '取消', danger: true
+  })
+  if (!ok) return
+  const n = await store.batchDeleteTransactions(txs)
+  showToast(`已删除 ${n} 笔`, 'success')
+  await refresh()
+  exitBatch()
+}
+
+// v2.3.0: 撤销最近一次交易操作
+async function onUndo() {
+  const done = await store.undo()
+  showToast(done ? '已撤销' : '无可撤销操作', done ? 'success' : 'info')
+  await refresh()
+}
+
+// 长按进入批量模式
+function onLongStart(e, tx) {
+  if (e && e.button !== 0 && e.button !== undefined) return // 仅左键
+  longPressTimer = setTimeout(() => {
+    enterBatch()
+    toggleSelect(tx)
+  }, 500)
+}
+function onTouchStart(tx) {
+  if (longPressTimer) clearTimeout(longPressTimer)
+  longPressTimer = setTimeout(() => {
+    enterBatch()
+    toggleSelect(tx)
+  }, 500)
+}
+function onLongEnd() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+}
+function onContextMenu(tx) {
+  if (!batchMode.value) {
+    enterBatch()
+    toggleSelect(tx)
+  }
+}
+
+onUnmounted(() => {
+  window.removeEventListener('moneybook:tx-added', onTxAdded)
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+})
 </script>
 
 <style scoped>
-.records .page-header { margin-bottom: 12px; }
+.records .page-header {
+  margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.header-actions { display: flex; gap: 8px; }
+.undo-btn, .organize-btn {
+  font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 14px; cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.undo-btn {
+  background: var(--primary-bg); color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.organize-btn {
+  background: var(--bg-2); color: var(--text-2);
+  border: 1px solid var(--border-light);
+}
+.undo-btn:active, .organize-btn:active { transform: scale(0.96); }
+
+/* v2.3.0: 账户/转账小标签 */
+.acct-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366F1;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  white-space: nowrap;
+}
+.acct-tag.transfer {
+  background: rgba(236, 72, 153, 0.1);
+  color: #EC4899;
+  border-color: rgba(236, 72, 153, 0.2);
+}
+:root[data-theme="dark"] .acct-tag {
+  background: rgba(129, 140, 248, 0.2); border-color: rgba(129, 140, 248, 0.3); color: #A5B4FC;
+}
+:root[data-theme="dark"] .acct-tag.transfer {
+  background: rgba(236, 72, 153, 0.2); border-color: rgba(236, 72, 153, 0.3); color: #F472B6;
+}
+
+/* v2.3.0: 批量勾选框 */
+.tx-check {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--border-light);
+  margin-right: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: transparent;
+  background: var(--card);
+  transition: all 0.15s;
+}
+.tx-check.on {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+}
+
+/* v2.3.0: 批量底部操作条 */
+.batch-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  background: var(--card);
+  border-top: 1px solid var(--border-light);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+}
+.batch-count { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.batch-btn {
+  padding: 9px 12px; font-size: 13px; font-weight: 600;
+  border: none; border-radius: 10px;
+  background: var(--bg-2); color: var(--text-1);
+  cursor: pointer; white-space: nowrap;
+  transition: transform 0.1s, opacity 0.2s;
+}
+.batch-btn:active { transform: scale(0.96); }
+.batch-btn.danger {
+  background: linear-gradient(135deg, #FEE2E2, #FECACA); color: #DC2626;
+}
+
+/* v2.3.0: 批量改分类选择器 */
+.cat-picker-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.cat-picker-card {
+  width: 100%; max-width: 420px;
+  max-height: 70vh; overflow-y: auto;
+  background: var(--card); border-radius: 20px; padding: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+.cp-title { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 12px; }
+.cp-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+}
+.cp-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px; background: var(--bg-2);
+  border-radius: 10px; cursor: pointer;
+  transition: all 0.15s;
+}
+.cp-item:active { transform: scale(0.95); }
+.cp-emoji { font-size: 20px; }
+.cp-name { font-size: 11px; color: var(--text-2); }
+:root[data-theme="dark"] .cat-picker-overlay { background: rgba(0, 0, 0, 0.7); }
 .filter-bar {
   padding: 12px 14px;
   background: var(--card);
