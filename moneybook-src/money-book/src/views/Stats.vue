@@ -21,25 +21,8 @@
       </div>
     </div>
 
-    <!-- v2.3.x: 净资产 -->
-    <div class="card summary-card fade-in-up" style="animation-delay: 0.08s">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
-        <span>净资产</span>
-        <span class="link-all" @click="goAccounts">管理账户 ›</span>
-      </div>
-      <div class="nw-total">¥{{ fmtAmount(netWorth) }}</div>
-      <div class="nw-list">
-        <div v-for="a in activeAccounts" :key="a.id" class="nw-row">
-          <span class="nw-icon">{{ a.icon || '💰' }}</span>
-          <span class="nw-name">{{ a.name }}</span>
-          <span class="nw-balance">¥{{ fmtAmount(a.balance) }}</span>
-        </div>
-        <div v-if="!activeAccounts.length" class="muted">暂无账户</div>
-      </div>
-    </div>
-
     <!-- v2.3.x: 现金流(近 12 月) -->
-    <div class="card chart-card fade-in-up" style="animation-delay: 0.1s">
+    <div class="card chart-card fade-in-up" style="animation-delay: 0.08s">
       <div class="card-title">💰 现金流</div>
       <v-chart :option="cashflowOption" autoresize style="height: 220px;" v-if="cashflow.some(o => o.expense > 0 || o.income > 0)" />
       <div v-else class="empty"><div class="ico">💸</div><div>暂无数据</div></div>
@@ -160,16 +143,12 @@
         <span class="muted">多</span>
       </div>
     </div>
-
-    <!-- v2.3.x: 自定义报表入口 -->
-    <button class="report-btn fade-in-up" @click="goReport">📊 自定义报表</button>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBookStore } from '../stores/book'
-import { useRouter } from 'vue-router'
 import { fmtAmount } from '../utils/format'
 import { listTransactions } from '../db'
 import VChart from 'vue-echarts'
@@ -181,7 +160,6 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 use([CanvasRenderer, LineChart, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
 
 const store = useBookStore()
-const router = useRouter()
 const ranges = [
   { v: 'day', label: '日' },
   { v: 'week', label: '周' },
@@ -228,11 +206,6 @@ const summary = computed(() => {
   }
   return { expense, income, balance: income - expense }
 })
-
-// v2.3.x: 净资产
-const accounts = computed(() => store.accounts)
-const activeAccounts = computed(() => accounts.value.filter(a => !a.archived))
-const netWorth = computed(() => accounts.value.reduce((s, a) => s + (Number(a.balance) || 0), 0))
 
 // v2.3.x: 现金流(近 12 月) + 年累计 — 拉取去年初至今
 const cashflowTxs = ref([])
@@ -326,10 +299,6 @@ const yearRows = computed(() => {
   ]
   return rows.map(r => ({ ...r, arrow: r.delta > 0 ? '▲' : (r.delta < 0 ? '▼' : '') }))
 })
-
-// v2.3.x: 导航
-function goAccounts() { router.push('/accounts') }
-function goReport() { router.push('/report') }
 
 const trendData = computed(() => {
   const map = new Map()
@@ -610,19 +579,6 @@ const calendarData = computed(() => {
 }
 .hm-legend .hm-cell { width: 8px; height: 8px; }
 
-/* === v2.3.x: 净资产 === */
-.link-all { font-size: 12px; color: var(--primary); font-weight: 500; }
-.nw-total { font-size: 26px; font-weight: 800; color: var(--text-1); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
-.nw-list { display: flex; flex-direction: column; }
-.nw-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-light); }
-.nw-row:last-child { border-bottom: none; }
-.nw-icon {
-  width: 30px; height: 30px; border-radius: 8px; background: var(--primary-bg);
-  display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
-}
-.nw-name { flex: 1; font-size: 13px; color: var(--text-2); }
-.nw-balance { font-size: 13px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; }
-
 /* === v2.3.x: 年累计 === */
 .yc-row { display: flex; align-items: baseline; gap: 6px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border-light); }
 .yc-row:last-child { border-bottom: none; }
@@ -633,15 +589,4 @@ const calendarData = computed(() => {
 .yc-pct.pos { color: #10B981; }
 .yc-pct.neg { color: #EF4444; }
 .yc-pct.flat { color: var(--text-3); }
-
-/* === v2.3.x: 自定义报表按钮 === */
-.report-btn {
-  display: block; width: 100%;
-  background: var(--gradient); color: #fff;
-  border: none; border-radius: var(--radius-lg);
-  padding: 13px; font-size: 15px; font-weight: 700;
-  box-shadow: var(--shadow-lg); cursor: pointer;
-  margin-top: 14px;
-}
-.report-btn:active { transform: scale(0.98); }
 </style>

@@ -36,15 +36,6 @@
             <input v-model="form.merchant" class="edit-input" placeholder="商户名称" maxlength="32">
           </div>
 
-          <!-- 账户 -->
-          <div class="edit-field" v-if="store.accounts.length">
-            <label class="edit-label">账户</label>
-            <select v-model.number="form.account_id" class="edit-input">
-              <option :value="0">未选</option>
-              <option v-for="a in store.accounts" :key="a.id" :value="a.id">{{ a.icon }} {{ a.name }}</option>
-            </select>
-          </div>
-
           <!-- 分类 -->
           <div class="edit-field">
             <label class="edit-label">分类</label>
@@ -132,7 +123,6 @@ const form = reactive({
   merchant: '',
   category_id: 0,
   note: '',
-  account_id: 0,
   splits: [],   // v2.3.0 拆分明细
   timeInput: ''  // datetime-local 格式: YYYY-MM-DDTHH:mm
 })
@@ -150,7 +140,6 @@ watch(() => props.tx, (tx) => {
     form.merchant = tx.merchant || ''
     form.category_id = tx.category_id
     form.note = tx.note || ''
-    form.account_id = tx.account_id || 0
     form.splits = (tx.splits && tx.splits.length) ? tx.splits.map(s => ({ ...s })) : []
     // 若原本有拆分则默认开启拆分模式
     splitMode.value = form.splits.length > 0
@@ -238,7 +227,6 @@ async function onSave() {
       merchant: form.merchant,
       note: form.note,
       occurred_at: occurredAt,
-      account_id: (form.account_id || 0),
       source: props.tx.source,
       raw_text: props.tx.raw_text
     }

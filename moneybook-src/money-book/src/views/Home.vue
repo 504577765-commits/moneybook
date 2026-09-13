@@ -46,10 +46,6 @@
         <div class="gc-label">本月收入</div>
         <div class="gc-val gc-pos">¥{{ fmtAmount(monthIncome) }}</div>
       </div>
-      <div class="grid-card tappable" @click="goAccounts">
-        <div class="gc-label">净资产</div>
-        <div class="gc-val">¥{{ fmtAmount(netWorth) }}</div>
-      </div>
       <div class="grid-card tappable wide" @click="goBudget">
         <div class="gc-head">
           <span class="gc-label" style="margin:0;">预算进度</span>
@@ -165,7 +161,6 @@ const router = useRouter()
 // v2.3.x: 仪表盘导航
 function goStats() { router.push('/stats') }
 function goBudget() { router.push('/budget') }
-function goAccounts() { router.push('/accounts') }
 async function undoLast() {
   const ok = await store.undo()
   loadMonthTxs()
@@ -297,9 +292,6 @@ const monthIncome = computed(() => {
   }
   return s
 })
-// v2.3.x: 净资产 = 所有账户余额总和
-const netWorth = computed(() => store.accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0))
-
 const totalBudget = computed(() => budget.totalBudget || 0)
 const budgetSpent = computed(() => budget.monthSpent || 0)
 const budgetPct = computed(() => totalBudget.value > 0 ? (budgetSpent.value / totalBudget.value) * 100 : 0)

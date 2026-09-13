@@ -30,15 +30,6 @@
             <input v-model="form.merchant" class="add-inp" placeholder="如:美团 / 工资" maxlength="32" @blur="onMerchantBlur">
           </div>
 
-          <!-- 账户 -->
-          <div class="add-field" v-if="store.accounts.length">
-            <label class="add-label">账户</label>
-            <select v-model.number="form.account_id" class="add-inp">
-              <option :value="0">未选</option>
-              <option v-for="a in store.accounts" :key="a.id" :value="a.id">{{ a.icon }} {{ a.name }}</option>
-            </select>
-          </div>
-
           <!-- 分类 -->
           <div class="add-field">
             <label class="add-label">分类</label>
@@ -97,8 +88,7 @@ const form = reactive({
   amount: '',
   merchant: '',
   category_id: 0,
-  note: '',
-  account_id: 0
+  note: ''
 })
 
 // 商户 blur 时: 若已有该商户记忆分类则自动带出
@@ -163,8 +153,7 @@ async function onSave() {
       category_id: form.category_id,
       merchant: form.merchant,
       note: form.note,
-      source: 'manual',
-      account_id: form.account_id || 0
+      source: 'manual'
     })
     if (r.ok) {
       showToast('已记一笔', 'success')
@@ -176,7 +165,6 @@ async function onSave() {
       form.amount = ''
       form.merchant = ''
       form.note = ''
-      form.account_id = 0
       emit('saved')
       emit('close')
     } else {

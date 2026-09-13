@@ -51,17 +51,6 @@
           <span class="sr-label">桌面组件</span>
           <span class="sr-chev">›</span>
         </div>
-        <!-- v2.3.x: 账户/自定义报表入口 -->
-        <div class="setting-row" @click="router.push('/accounts')">
-          <span class="sr-icon">👛</span>
-          <span class="sr-label">账户管理</span>
-          <span class="sr-chev">›</span>
-        </div>
-        <div class="setting-row" @click="router.push('/report')">
-          <span class="sr-icon">📈</span>
-          <span class="sr-label">自定义报表</span>
-          <span class="sr-chev">›</span>
-        </div>
       </div>
     </div>
 
