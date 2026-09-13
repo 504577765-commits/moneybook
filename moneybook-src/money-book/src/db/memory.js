@@ -122,10 +122,24 @@ export default {
     return true
   },
 
-  listTransactions({ startTs = 0, endTs = Infinity, limit = 500 } = {}) {
-    const end = endTs === Infinity ? Date.now() + 86400000 : endTs
+  listTransactions({ startTs = 0, endTs, type, categoryId, keyword, limit = 500 } = {}) {
+    const end = endTs === undefined || endTs === Infinity ? Date.now() + 86400000 : endTs
+    const kw = keyword ? String(keyword).toLowerCase() : ''
     return MEM.transactions
-      .filter(t => t.occurred_at >= startTs && t.occurred_at < end)
+      .filter(t => {
+        if (t.occurred_at < startTs || t.occurred_at >= end) return false
+        if (type && t.type !== type) return false
+        if (categoryId) {
+          const inMain = t.category_id === categoryId
+          const inSplits = (t.splits && t.splits.length) ? t.splits.some(s => s.category_id === categoryId) : false
+          if (!inMain && !inSplits) return false
+        }
+        if (kw) {
+          const hasKw = (t.merchant || '').toLowerCase().includes(kw) || (t.note || '').toLowerCase().includes(kw)
+          if (!hasKw) return false
+        }
+        return true
+      })
       .sort((a, b) => b.occurred_at - a.occurred_at)
       .slice(0, limit)
       .map(t => ({ ...t, splits: t.splits ? t.splits.map(s => ({ ...s })) : [] }))
@@ -211,15 +225,18 @@ export default {
   },
 
   dailySum({ startTs = 0, endTs = Date.now() } = {}) {
+    // 与 Java dailySumJs 结构一致: 按 (day, type) 分组, 返回 {day, type, total}
     const txs = this.listTransactions({ startTs, endTs, limit: 100000 })
     const by = {}
     for (const t of txs) {
       if (t.type === 'transfer') continue
-      const d = new Date(t.occurred_at).toDateString()
-      by[d] = by[d] || { date: d, type: t.type, total: 0 }
-      by[d].total += t.amount
+      const d = new Date(t.occurred_at)
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const key = day + '|' + t.type
+      by[key] = by[key] || { day, type: t.type, total: 0 }
+      by[key].total += t.amount
     }
-    return Object.values(by)
+    return Object.values(by).sort((a, b) => a.day < b.day ? -1 : 1)
   },
 
   cleanDuplicates() { return 0 },

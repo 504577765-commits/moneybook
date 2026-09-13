@@ -175,7 +175,7 @@ export async function deleteTransaction(id) {
 }
 
 export async function listTransactions({ startTs, endTs, type, categoryId, keyword, limit = 500 } = {}) {
-  if (!hasCap()) return MEM.listTransactions({ startTs, endTs, limit })
+  if (!hasCap()) return MEM.listTransactions({ startTs, endTs, type, categoryId, keyword, limit })
   try {
     const r = await cap().listTransactionsJs({
       startTs: startTs || 0,
@@ -323,35 +323,43 @@ export async function debugParse(text, pkg = 'sms') {
 }
 
 export async function sumByCategory({ startTs, endTs, type } = {}) {
-  if (!hasCap()) return MEM.sumByCategory({ startTs, endTs, type })
-  try {
-    const r = await cap().sumByCategoryJs({ startTs: startTs || 0, endTs: endTs || Date.now() })
-    let items = r.items || []
-    if (type) {
-      // JS 端拿到的是全部,需要按 type 过滤需要先 join categories
-      const cats = await getAllCategories()
-      const typeMap = {}
-      cats.forEach(c => { typeMap[c.id] = c.type })
-      items = items.filter(i => typeMap[i.category_id] === type)
+  let items
+  if (!hasCap()) {
+    items = MEM.sumByCategory({ startTs, endTs })
+  } else {
+    try {
+      const r = await cap().sumByCategoryJs({ startTs: startTs || 0, endTs: endTs || Date.now() })
+      items = r.items || []
+    } catch (e) {
+      console.error('sumByCategory err', e)
+      return []
     }
-    return items
-  } catch (e) {
-    console.error('sumByCategory err', e)
-    return []
   }
+  if (type) {
+    // JS 端拿到的是全部,需要按 type 过滤需要先 join categories
+    const cats = await getAllCategories()
+    const typeMap = {}
+    cats.forEach(c => { typeMap[c.id] = c.type })
+    items = items.filter(i => typeMap[i.category_id] === type)
+  }
+  return items
 }
 
 export async function dailySum({ startTs, endTs, type } = {}) {
-  if (!hasCap()) return MEM.dailySum({ startTs, endTs, type })
-  try {
-    const r = await cap().dailySumJs({ startTs: startTs || 0, endTs: endTs || Date.now() })
-    let items = r.items || []
-    if (type) items = items.filter(i => i.type === type)
-    return items
-  } catch (e) {
-    console.error('dailySum err', e)
-    return []
+  let items
+  if (!hasCap()) {
+    items = MEM.dailySum({ startTs, endTs })
+  } else {
+    try {
+      const r = await cap().dailySumJs({ startTs: startTs || 0, endTs: endTs || Date.now() })
+      items = r.items || []
+    } catch (e) {
+      console.error('dailySum err', e)
+      return []
+    }
   }
+  if (type) items = items.filter(i => i.type === type)
+  return items
 }
 
 // ===== 兼容旧 API =====
