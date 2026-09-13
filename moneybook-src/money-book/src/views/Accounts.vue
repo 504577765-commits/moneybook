@@ -111,13 +111,10 @@ async function showAccountForm(template) {
     const ok = await store.saveAccount({ name: name.trim(), type, icon })
     showToast(ok ? '已新增账户' : '新增失败', ok ? 'success' : 'error')
   } else {
-    // 编辑: 余额(期初)
-    const balanceStr = await showPrompt('该账户当前余额(期初+流水)', String(template.balance || 0), '编辑账户', { placeholder: '余额' })
-    if (balanceStr === null) return
-    const initialBalance = Number(balanceStr) || 0
+    // 编辑: 保留期初余额(当前余额=期初+流水,若覆盖会双重计入),仅改名称/类型/图标
     const ok = await store.saveAccount({
       id: template.id, name: name.trim(), type, icon,
-      initial_balance: initialBalance
+      initial_balance: template.initial_balance || 0
     })
     if (ok) showToast('已保存', 'success')
   }

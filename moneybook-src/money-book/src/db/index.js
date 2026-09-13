@@ -11,6 +11,9 @@
 const cap = () => window.Capacitor?.Plugins?.MoneyNotifier
 const hasCap = () => !!cap()
 
+// v2.3.1: Web/预览环境内存降级数据层(无原生桥时全功能可用)
+import MEM from './memory'
+
 /** 支付来源常量(原 categories.js) */
 export const PAYMENT_SOURCES = {
   ALIPAY:  { id: 'alipay',  name: '支付宝', icon: '💙' },
@@ -28,7 +31,7 @@ export const PAYMENT_SOURCES = {
 // ===== 分类 =====
 
 export async function getAllCategories(type) {
-  if (!hasCap()) return []
+  if (!hasCap()) return MEM.getAllCategories(type)
   try {
     // v2.2.5:Java 端支持 type 参数,减少数据传输
     const r = await cap().getCategoriesJs({ type: type || null })
@@ -56,7 +59,7 @@ export async function deleteCategory(id) {
 
 // v2.2.78: 恢复手动记账(用户需求变更) — 仍走 Java 端保证 5 层去重
 export async function insertTransaction(tx) {
-  if (!hasCap()) return { ok: false, id: null }
+  if (!hasCap()) return MEM.insertTransaction(tx)
   try {
     const r = await cap().insertTransactionJs({
       type: tx.type,
@@ -78,7 +81,7 @@ export async function insertTransaction(tx) {
 }
 
 export async function updateTransaction(tx) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.updateTransaction(tx)
   try {
     const r = await cap().updateTransactionJs({
       id: tx.id,
@@ -100,7 +103,7 @@ export async function updateTransaction(tx) {
 
 // v2.3.0: upsert(撤销/恢复用)
 export async function upsertTransaction(tx) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.upsertTransaction(tx)
   try {
     const r = await cap().upsertTransactionJs({
       id: tx.id,
@@ -124,7 +127,8 @@ export async function upsertTransaction(tx) {
 
 // v2.3.0: 批量删除
 export async function deleteTransactions(ids) {
-  if (!hasCap() || !ids?.length) return 0
+  if (!hasCap()) return MEM.deleteTransactions(ids)
+  if (!ids?.length) return 0
   try {
     const r = await cap().deleteTransactionsJs({ ids })
     return r?.removed || 0
@@ -136,7 +140,8 @@ export async function deleteTransactions(ids) {
 
 // v2.3.0: 批量改分类
 export async function batchSetCategory(ids, categoryId) {
-  if (!hasCap() || !ids?.length) return 0
+  if (!hasCap()) return MEM.batchSetCategory(ids, categoryId)
+  if (!ids?.length) return 0
   try {
     const r = await cap().batchSetCategoryJs({ ids, category_id: categoryId })
     return r?.updated || 0
@@ -148,7 +153,7 @@ export async function batchSetCategory(ids, categoryId) {
 
 // v2.3.0: 保存拆分明细
 export async function saveTxSplits(txId, splits) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.saveTxSplits(txId, splits)
   try {
     const r = await cap().saveTxSplitsJs({ tx_id: txId, splits: splits || [] })
     return r.success === true
@@ -159,7 +164,7 @@ export async function saveTxSplits(txId, splits) {
 }
 
 export async function deleteTransaction(id) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.deleteTransaction(id)
   try {
     const r = await cap().deleteTransactionJs({ id })
     return r.success === true
@@ -170,7 +175,7 @@ export async function deleteTransaction(id) {
 }
 
 export async function listTransactions({ startTs, endTs, type, categoryId, keyword, limit = 500 } = {}) {
-  if (!hasCap()) return []
+  if (!hasCap()) return MEM.listTransactions({ startTs, endTs, limit })
   try {
     const r = await cap().listTransactionsJs({
       startTs: startTs || 0,
@@ -196,6 +201,7 @@ export async function listTransactions({ startTs, endTs, type, categoryId, keywo
  * @returns {Promise<number>} 删除的条数
  */
 export async function cleanDuplicates() {
+  if (!hasCap()) return MEM.cleanDuplicates()
   if (!cap().cleanDuplicatesJs) {
     console.warn('cleanDuplicatesJs 不可用')
     return 0
@@ -214,6 +220,7 @@ export async function cleanDuplicates() {
  * @returns {Promise<{items, count}>}
  */
 export async function getRecentRawTexts(limit = 50) {
+  if (!hasCap()) return MEM.getRecentRawTexts(limit)
   if (!cap().getRecentRawTextsJs) {
     return { items: [], count: 0 }
   }
@@ -316,7 +323,7 @@ export async function debugParse(text, pkg = 'sms') {
 }
 
 export async function sumByCategory({ startTs, endTs, type } = {}) {
-  if (!hasCap()) return []
+  if (!hasCap()) return MEM.sumByCategory({ startTs, endTs, type })
   try {
     const r = await cap().sumByCategoryJs({ startTs: startTs || 0, endTs: endTs || Date.now() })
     let items = r.items || []
@@ -335,7 +342,7 @@ export async function sumByCategory({ startTs, endTs, type } = {}) {
 }
 
 export async function dailySum({ startTs, endTs, type } = {}) {
-  if (!hasCap()) return []
+  if (!hasCap()) return MEM.dailySum({ startTs, endTs, type })
   try {
     const r = await cap().dailySumJs({ startTs: startTs || 0, endTs: endTs || Date.now() })
     let items = r.items || []
@@ -383,7 +390,7 @@ export async function exportTransactionsToCsv() {
 // ===== v2.3.0 账户 =====
 
 export async function getAllAccounts() {
-  if (!hasCap()) return []
+  if (!hasCap()) return MEM.getAllAccounts()
   try {
     const r = await cap().getAllAccountsJs()
     return r.accounts || []
@@ -394,7 +401,7 @@ export async function getAllAccounts() {
 }
 
 export async function insertAccount({ name, type, icon }) {
-  if (!hasCap()) return { ok: false, id: 0 }
+  if (!hasCap()) return MEM.insertAccount({ name, type, icon })
   try {
     const r = await cap().insertAccountJs({ name, type, icon })
     return { ok: r.success === true, id: r.id || 0 }
@@ -405,7 +412,7 @@ export async function insertAccount({ name, type, icon }) {
 }
 
 export async function updateAccount({ id, name, type, icon, initial_balance }) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.updateAccount({ id, name, type, icon, initial_balance })
   try {
     const r = await cap().updateAccountJs({ id, name, type, icon, initial_balance })
     return r.success === true
@@ -416,7 +423,7 @@ export async function updateAccount({ id, name, type, icon, initial_balance }) {
 }
 
 export async function deleteAccount(id) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.deleteAccount(id)
   try {
     const r = await cap().deleteAccountJs({ id })
     return r.success === true
@@ -430,7 +437,7 @@ export async function deleteAccount(id) {
 
 /** 某月各分类预算 */
 export async function getBudgets(month) {
-  if (!hasCap()) return []
+  if (!hasCap()) return MEM.getBudgets(month)
   try {
     const r = await cap().getBudgetsJs({ month })
     return r.budgets || []
@@ -441,7 +448,7 @@ export async function getBudgets(month) {
 }
 
 export async function setBudget(categoryId, month, amount) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.setBudget(categoryId, month, amount)
   try {
     const r = await cap().setBudgetJs({ category_id: categoryId, month, amount })
     return r.success === true
@@ -454,7 +461,7 @@ export async function setBudget(categoryId, month, amount) {
 // ===== v2.3.0 商户映射 =====
 
 export async function getMerchantAccountId(merchant) {
-  if (!hasCap()) return 0
+  if (!hasCap()) return MEM.getMerchantAccountId(merchant)
   try {
     const r = await cap().getMerchantAccountIdJs({ merchant })
     return r.account_id || 0
@@ -465,7 +472,7 @@ export async function getMerchantAccountId(merchant) {
 }
 
 export async function setMerchantAccount(merchant, accountId) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.setMerchantAccount(merchant, accountId)
   try {
     const r = await cap().setMerchantAccountJs({ merchant, account_id: accountId })
     return r.success === true
@@ -477,7 +484,7 @@ export async function setMerchantAccount(merchant, accountId) {
 
 /** 商户记忆分类(null=无) */
 export async function getMerchantCategory(merchant) {
-  if (!hasCap()) return null
+  if (!hasCap()) return MEM.getMerchantCategory(merchant)
   try {
     const r = await cap().getMerchantCategoryJs({ merchant })
     return r.category_id || null
@@ -488,7 +495,7 @@ export async function getMerchantCategory(merchant) {
 }
 
 export async function setMerchantCategory(merchant, categoryId) {
-  if (!hasCap()) return false
+  if (!hasCap()) return MEM.setMerchantCategory(merchant, categoryId)
   try {
     const r = await cap().setMerchantCategoryJs({ merchant, category_id: categoryId })
     return r.success === true
