@@ -7,7 +7,9 @@ import dayjs from 'dayjs'
  * - 每月为分类分配预算额度(budgets 表)
  * - 未花余额结转下月(applyRollover)
  * - 已花按拆分明细归集(与 book.stats 规则一致)
+ * - v3.0.17: 新的一月自动沿用上月已设置的预算
  */
+const SEEN_MONTH_KEY = 'mb_budget_seen_month'
 export const useBudgetStore = defineStore('budget', {
   state: () => ({
     month: dayjs().format('YYYY-MM'),   // 当前查看月份
@@ -72,9 +74,41 @@ export const useBudgetStore = defineStore('budget', {
       const budgets = await getBudgets(m)
       this.budgets = {}
       for (const b of budgets) this.budgets[b.category_id] = b.amount
+      // v3.0.17: 进入新的一月时,若本月还没设置预算,自动沿用最近一个月的预算
+      await this.ensureMonthlyCarryForward(m)
       const start = dayjs(m + '-01').startOf('month').valueOf()
       const end = dayjs(m + '-01').add(1, 'month').startOf('month').valueOf()
       this.cacheTransactions = await listTransactions({ startTs: start, endTs: end, limit: 5000 })
+    },
+
+    /**
+     * 每个自然月首次打开预算页时,把最近一个月已设置的预算复制到本月。
+     * 用 localStorage 记录已处理过的月份,避免用户在本月手动清零后又被自动填回。
+     */
+    async ensureMonthlyCarryForward(m) {
+      const curMonth = dayjs().format('YYYY-MM')
+      if (m !== curMonth) return
+      let seen = ''
+      try { seen = localStorage.getItem(SEEN_MONTH_KEY) || '' } catch (e) { /* ignore */ }
+      if (seen === curMonth) return
+      try { localStorage.setItem(SEEN_MONTH_KEY, curMonth) } catch (e) { /* ignore */ }
+      if (Object.keys(this.budgets).length > 0) return  // 本月已有预算,不覆盖
+      // 回溯最多 24 个月,找到最近一个设过预算的月份
+      let cursor = dayjs(curMonth + '-01').subtract(1, 'month')
+      for (let i = 0; i < 24; i++) {
+        const mm = cursor.format('YYYY-MM')
+        const list = await getBudgets(mm)
+        if (list.length) {
+          for (const b of list) {
+            const amt = Number(b.amount) || 0
+            if (amt <= 0) continue
+            await setBudget(b.category_id, curMonth, amt)
+            this.budgets[b.category_id] = amt
+          }
+          return
+        }
+        cursor = cursor.subtract(1, 'month')
+      }
     },
 
     /** 设置某分类预算额度(0=清除) */

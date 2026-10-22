@@ -10,6 +10,14 @@
 
     <div class="filter-bar card">
       <div class="filter-row">
+        <span class="muted">范围</span>
+        <span :class="['chip', scope === 'recent' ? 'active':'']" @click="setScope('recent')">近90天</span>
+        <span :class="['chip', scope === 'year' ? 'active':'']" @click="setScope('year')">按年</span>
+        <select v-if="scope === 'year'" v-model.number="year" class="year-select" @change="refresh">
+          <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option>
+        </select>
+      </div>
+      <div class="filter-row">
         <span class="muted">类型</span>
         <span :class="['chip', filter.type === '' ? 'active':'']" @click="setType('')">全部</span>
         <span :class="['chip', filter.type === 'expense' ? 'active':'']" @click="setType('expense')">支出</span>
@@ -27,15 +35,30 @@
       </div>
     </div>
 
+    <div v-if="scope === 'year'" class="year-summary card fade-in-up">
+      <div class="ys-cell">
+        <span class="ys-label">收入</span>
+        <span class="ys-val amount-pos">+¥{{ fmtAmount(yearIncome) }}</span>
+      </div>
+      <div class="ys-cell">
+        <span class="ys-label">支出</span>
+        <span class="ys-val amount-neg">-¥{{ fmtAmount(yearExpense) }}</span>
+      </div>
+      <div class="ys-cell">
+        <span class="ys-label">结余</span>
+        <span class="ys-val" :class="yearBalance >= 0 ? 'amount-pos' : 'amount-neg'">¥{{ fmtAmount(yearBalance) }}</span>
+      </div>
+    </div>
+
     <div v-if="filtered.length === 0" class="empty fade-in-up">
       <div class="ico">📋</div>
       <div class="empty-title">暂无符合条件的记录</div>
       <div class="muted" style="margin-top:8px;">试试调整筛选条件</div>
     </div>
 
-    <div v-for="(g, gi) in grouped" :key="g.date" class="day-group fade-in-up" :style="`animation-delay: ${gi * 0.05}s`">
+    <div v-for="(g, gi) in grouped" :key="g.key" class="day-group fade-in-up" :style="`animation-delay: ${gi * 0.05}s`">
       <div class="day-title">
-        <span class="day-name">{{ formatDay(g.date) }}</span>
+        <span class="day-name">{{ g.label }}</span>
         <span class="day-amounts amount-num">
           <span v-if="dayExpense(g.items) > 0" class="amount-neg">-¥{{ fmtAmount(dayExpense(g.items)) }}</span>
           <span v-if="dayIncome(g.items) > 0" class="amount-pos" style="margin-left:8px;">+¥{{ fmtAmount(dayIncome(g.items)) }}</span>
@@ -45,9 +68,11 @@
         <div v-for="tx in g.items" :key="tx.id" class="tx-item tappable"
              @click="onItemClick(tx)"
              @mousedown="onLongStart($event, tx)" @mouseup="onLongEnd" @mouseleave="onLongEnd"
-             @touchstart.passive="onTouchStart(tx)" @touchend.passive="onTouchEnd" @touchmove.passive="onLongEnd"
+             @touchstart.passive="onTouchStart($event, tx)" @touchend.passive="onTouchEnd" @touchmove.passive="onLongEnd"
              @contextmenu.prevent="onContextMenu(tx)">
-          <div v-if="batchMode" :class="['tx-check', isSelected(tx.id) ? 'on' : '']" @click.stop="toggleSelect(tx)">✓</div>
+          <div v-if="batchMode" :class="['tx-check', isSelected(tx.id) ? 'on' : '']"
+               @click.stop="onCheckClick(tx)"
+               @mousedown.stop @mouseup.stop @touchstart.stop @touchend.stop>✓</div>
           <div class="cat-icon" :style="{background: catColor(tx.category_id, tx.type)}">
             <span class="cat-emoji">{{ catIcon(tx.category_id, tx.type) }}</span>
           </div>
@@ -58,7 +83,7 @@
               <span v-if="tx.auto" class="auto-tag">自动</span>
               <span v-if="tx.type === 'transfer'" class="acct-tag transfer">转账</span>
               <span v-else-if="accOf(tx.account_id)" class="acct-tag">{{ accOf(tx.account_id).icon }} {{ accOf(tx.account_id).name }}</span>
-              <span class="tx-time">· {{ fmtTime(tx.occurred_at, 'HH:mm') }}</span>
+              <span class="tx-time">· {{ scope === 'year' ? fmtTime(tx.occurred_at, 'M月D日 HH:mm') : fmtTime(tx.occurred_at, 'HH:mm') }}</span>
             </div>
             <div v-if="tx.note" class="note-badge">{{ tx.note }}</div>
           </div>
@@ -107,6 +132,12 @@ import EditTxDialog from '../components/EditTxDialog.vue'
 const store = useBookStore()
 const filter = ref({ type: '', categoryId: '', keyword: '' })
 const all = ref([])
+const scope = ref('recent')
+const year = ref(new Date().getFullYear())
+const yearOptions = computed(() => {
+  const cur = new Date().getFullYear()
+  return Array.from({ length: 7 }, (_, i) => cur - i)
+})
 
 const catList = computed(() => {
   if (filter.value.type === 'expense') return store.categories.expense
@@ -125,13 +156,44 @@ const filtered = computed(() => {
   return r
 })
 
-const grouped = computed(() => groupByDate(filtered.value))
+const grouped = computed(() => {
+  if (scope.value !== 'year') {
+    return groupByDate(filtered.value).map(g => ({ key: g.date, label: formatDay(g.date), items: g.items }))
+  }
+  const map = {}
+  for (const t of filtered.value) {
+    const k = dayjs(t.occurred_at).format('YYYY-MM')
+    if (!map[k]) map[k] = []
+    map[k].push(t)
+  }
+  return Object.keys(map).sort().reverse().map(k => ({
+    key: k,
+    label: dayjs(k + '-01').format('YYYY年M月'),
+    items: map[k]
+  }))
+})
+
+const yearExpense = computed(() => filtered.value.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0))
+const yearIncome  = computed(() => filtered.value.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0))
+const yearBalance = computed(() => yearIncome.value - yearExpense.value)
 
 async function refresh() {
-  // 最近 90 天
-  const end = Date.now()
-  const start = end - 90 * 86400000
-  all.value = await listTransactions({ startTs: start, endTs: end, limit: 5000 })
+  let start, end
+  if (scope.value === 'year') {
+    start = new Date(year.value, 0, 1).getTime()
+    end = new Date(year.value + 1, 0, 1).getTime()
+  } else {
+    // 最近 90 天
+    end = Date.now()
+    start = end - 90 * 86400000
+  }
+  all.value = await listTransactions({ startTs: start, endTs: end, limit: 50000 })
+}
+
+function setScope(s) {
+  if (scope.value === s) return
+  scope.value = s
+  refresh()
 }
 
 function setType(t) { filter.value.type = t; filter.value.categoryId = '' }
@@ -184,6 +246,8 @@ const batchMode = ref(false)
 const selected = ref(new Set())
 const catPickerVisible = ref(false)
 let longPressTimer = null
+// 长按触发后短暂抑制随后的 click,避免"先取消再选择"的反复切换
+let suppressClickUntil = 0
 
 const allCategories = computed(() => [...store.categories.expense, ...store.categories.income])
 
@@ -205,8 +269,17 @@ function exitBatch() {
 }
 
 function onItemClick(tx) {
+  // 点击时应立即取消尚未触发的长按计时器,防止点击后又被长按逻辑自动选中
+  clearLongPress()
+  if (Date.now() < suppressClickUntil) return
   if (batchMode.value) { toggleSelect(tx); return }
   openEdit(tx)
+}
+// 勾选框点击:只切换选中状态,不再触发整行长按/点击
+function onCheckClick(tx) {
+  clearLongPress()
+  suppressClickUntil = 0
+  toggleSelect(tx)
 }
 function toggleSelect(tx) {
   const s = new Set(selected.value)
@@ -260,22 +333,32 @@ async function onUndo() {
 }
 
 // 长按进入批量模式
+function clearLongPress() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+}
+function startLongPress(tx) {
+  clearLongPress()
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    suppressClickUntil = Date.now() + 600
+    if (!batchMode.value) enterBatch()
+    toggleSelect(tx)
+  }, 500)
+}
+function isCheckboxEvent(e) {
+  return !!(e && e.target && e.target.closest && e.target.closest('.tx-check'))
+}
 function onLongStart(e, tx) {
   if (e && e.button !== 0 && e.button !== undefined) return // 仅左键
-  longPressTimer = setTimeout(() => {
-    enterBatch()
-    toggleSelect(tx)
-  }, 500)
+  if (isCheckboxEvent(e)) return
+  startLongPress(tx)
 }
-function onTouchStart(tx) {
-  if (longPressTimer) clearTimeout(longPressTimer)
-  longPressTimer = setTimeout(() => {
-    enterBatch()
-    toggleSelect(tx)
-  }, 500)
+function onTouchStart(e, tx) {
+  if (isCheckboxEvent(e)) return
+  startLongPress(tx)
 }
 function onLongEnd() {
-  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+  clearLongPress()
 }
 function onContextMenu(tx) {
   if (!batchMode.value) {
@@ -395,6 +478,16 @@ onUnmounted(() => {
 .cp-emoji { font-size: 20px; }
 .cp-name { font-size: 11px; color: var(--text-2); }
 :root[data-theme="dark"] .cat-picker-overlay { background: rgba(0, 0, 0, 0.7); }
+.year-select {
+  font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 10px;
+  border: 1px solid var(--border-light); background: var(--bg-2); color: var(--text-1); outline: none;
+}
+.year-summary {
+  display: flex; gap: 8px; padding: 12px 14px; margin-bottom: 14px;
+}
+.ys-cell { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ys-label { font-size: 11px; color: var(--text-2); }
+.ys-val { font-size: 15px; font-weight: 700; }
 .filter-bar {
   padding: 12px 14px;
   background: var(--card);

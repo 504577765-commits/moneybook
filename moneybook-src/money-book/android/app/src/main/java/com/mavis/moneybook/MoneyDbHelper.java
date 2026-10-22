@@ -10,10 +10,17 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -26,7 +33,7 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
 
     private static final String TAG = "MoneyDb";
     private static final String DB_NAME = "moneybook.db";
-    private static final int VER = 2;
+    private static final int VER = 4;
 
     // v2.2.23 完整版分类规则(1000+ 关键词)
     // 用于在 Java 端做快速分类,即使 APP 没启动也能识别
@@ -138,7 +145,17 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "肉夹馍", "羊肉泡馍", "biangbiang面",
             // 卤味/熟食/凉菜
             "卤味", "卤水", "卤蛋", "卤鸡", "卤牛肉", "卤猪蹄", "绝味", "久久丫",
-            "熟食", "凉菜", "凉拌菜", "拌面", "拌粉", "沙拉", "轻食", "健身餐", "减脂餐"
+            "熟食", "凉菜", "凉拌菜", "拌面", "拌粉", "沙拉", "轻食", "健身餐", "减脂餐",
+            // v3.0.4: 从真实银行短信补充的餐饮商户关键词
+            "牛肉面", "兰州拉面", "牛肉粉", "胖哥俩", "铁锅炖", "灌汤", "猪蹄", "小炒", "湖南菜",
+            "咖喱", "烧烤", "酸菜鱼", "火锅", "米线", "面馆", "餐饮", "美食", "小笼包",
+            "麻辣烫", "馄饨", "冒菜", "焖面", "黄焖鸡", "自助", "铁板烧", "日料", "寿司",
+            "鸭脖", "披萨", "意面", "烤肉", "烤鱼", "羊蝎子", "串串",
+            // v3.0.15: 支付宝流水常见商户
+            "零食", "好想来", "粉店", "卤菜", "糕饼", "包子铺", "煎饼",
+            // v3.0.16: 外卖/咖啡平台,需长词覆盖 shopping 里的短词误命中(淘宝/CK)
+            "淘宝闪购", "luckin", "luckincoffee", "luckin coffee", "coffee",
+            "美团", "美团外卖", "美团闪购"
         });
 
         // ============ 交通 transport (100+) ============
@@ -191,7 +208,7 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "卡姿兰", "玛丽黛佳", "欧莱雅", "玉兰油", "Olay", "妮维雅", "旁氏",
             // 服饰
             "优衣库", "UNIQLO", "ZARA", "H&M", "GAP", "Levis", "李维斯", "LEE",
-            "CK", "Calvin Klein", "Tommy Hilfiger", "拉夫劳伦", "Ralph Lauren",
+            "Calvin Klein", "Tommy Hilfiger", "拉夫劳伦", "Ralph Lauren",
             "耐克", "Nike", "阿迪达斯", "Adidas", "新百伦", "New Balance", "NB",
             "彪马", "Puma", "匡威", "Converse", "范斯", "Vans", "亚瑟士", "Asics",
             "美津浓", "Mizuno", "斯凯奇", "Skechers", "FILA", "DESCENTE", "迪桑特",
@@ -239,7 +256,9 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "红星美凯龙", "月星家居", "百安居", "东方家园", "曲美", "全友家居",
             "索菲亚", "欧派", "志邦", "金牌", "尚品宅配", "维意", "诗尼曼",
             "顾家家居", "芝华仕", "林氏木业", "源氏木语", "原始元素", "网易严选",
-            "小米有品", "米家", "京东京造", "网易考拉", "拼多多", "网易智造"
+            "小米有品", "米家", "京东京造", "网易考拉", "拼多多", "网易智造",
+            // v3.0.4: 零食类(用户把"好想来零食乐园"记忆为购物)
+            "零食", "零食乐园", "好想来", "来伊份", "良品铺子", "三只松鼠", "百草味"
         });
 
         // ============ 娱乐 entertainment (90+) ============
@@ -285,7 +304,9 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "话剧票", "漫展", "Comicup", "CP漫展", "BW", "BiliBili World",
             "主题公园", "迪士尼乐园", "欢乐谷", "华侨城", "长隆", "方特",
             "海洋公园", "动物园", "植物园", "水族馆", "科技馆", "天文馆",
-            "Cosplay", "Coser", "写真", "私影", "陪玩", "陪练", "陪聊"
+            "Cosplay", "Coser", "写真", "私影", "陪玩", "陪练", "陪聊",
+            // v3.0.15: 支付宝流水常见订阅/休闲商户
+            "网易", "百度网盘", "网盘", "牵手", "乐刻"
         });
 
         // ============ 日用 daily (120+) ============
@@ -297,6 +318,8 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "日用百货", "日用品", "杂货", "小商品", "两元店", "十元店", "名创优品",
             "MINISO", "NOME", "诺米家居", "泡泡玛特", "POP MART",
             "杂物社", "杂物", "家居用品", "收纳", "整理", "装饰",
+            // v3.0.15: 无人零售/快递柜
+            "丰巢", "无人售货", "无人零售", "售货机",
             // v2.2.38: 京东便利店、生活服务
             "京东便利店", "京东超市", "京东到家", "天猫超市", "天猫小店",
             "苏宁小店", "苏鲜生", "国美超市", "永辉超市", "永辉mini", "永辉Bravo",
@@ -367,7 +390,10 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "眼镜", "眼镜店", "宝岛眼镜", "博士眼镜", "亮视点", "LensCrafters",
             "配镜", "隐形眼镜", "美瞳", "日抛", "月抛", "年抛", "护理液",
             "口腔", "牙科", "种植牙", "正畸", "矫正", "洗牙", "拔牙", "补牙", "根管",
-            "体检套餐", "入职体检", "健康证", "核酸", "PCR", "抗原", "疫苗"
+            "体检套餐", "入职体检", "健康证", "核酸", "PCR", "抗原", "疫苗",
+            // v3.0.4: 医院细分
+            "总医院", "人民医院", "中医院", "妇幼保健", "儿童医院", "口腔医院", "肿瘤医院",
+            "卫生院", "诊所"
         });
 
         // ============ 居住 housing (80+) ============
@@ -434,7 +460,9 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             "中级会计", "初级会计", "注册会计", "ACCA", "CFA", "FRM",
             "建造师", "一建", "二建", "消防工程师", "心理咨询师", "教师证",
             "驾校", "学车", "驾考", "科目一", "科目二", "科目三", "科目四",
-            "考试", "考证", "资格证", "等级证", "上岗证", "执业证"
+            "考试", "考证", "资格证", "等级证", "上岗证", "执业证",
+            // v3.0.15: AI/软件订阅
+            "深度求索", "DeepSeek", "OpenAI", "ChatGPT", "Claude", "Midjourney"
         });
 
         // ============ 收入 income ============
@@ -516,6 +544,60 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
     public MoneyDbHelper(Context ctx) {
         super(ctx, DB_NAME, null, VER);
         this.ctx = ctx;
+        loadMerchantKeywords(ctx);
+    }
+
+    // v3.0.5: 从 assets/merchant_keywords.tsv 加载扩充商户词库
+    // 格式: 分类<TAB>商户名; 失败时静默降级,不影响内置词表
+    private static volatile boolean merchantKeywordsLoaded = false;
+
+    private static synchronized void loadMerchantKeywords(Context ctx) {
+        if (merchantKeywordsLoaded) return;
+        merchantKeywordsLoaded = true;
+        if (ctx == null) return;
+        Map<String, List<String>> extra = new LinkedHashMap<>();
+        int total = 0;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(ctx.getAssets().open("merchant_keywords.tsv"), "UTF-8"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                int tab = line.indexOf('\t');
+                if (tab <= 0) continue;
+                String cat = line.substring(0, tab).trim();
+                String kw = line.substring(tab + 1).trim();
+                if (cat.isEmpty() || kw.isEmpty()) continue;
+                if (!CATEGORY_KEYWORDS.containsKey(cat)) continue;
+                List<String> list = extra.get(cat);
+                if (list == null) {
+                    list = new ArrayList<>();
+                    extra.put(cat, list);
+                }
+                list.add(kw);
+                total++;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "加载商户词库失败: " + e.getMessage());
+            return;
+        }
+        if (total == 0) return;
+        for (Map.Entry<String, List<String>> e : extra.entrySet()) {
+            String[] old = CATEGORY_KEYWORDS.get(e.getKey());
+            Set<String> seen = new HashSet<>();
+            LinkedHashSet<String> merged = new LinkedHashSet<>();
+            if (old != null) {
+                for (String kw : old) {
+                    merged.add(kw);
+                    seen.add(kw.toLowerCase());
+                }
+            }
+            for (String kw : e.getValue()) {
+                if (seen.add(kw.toLowerCase())) merged.add(kw);
+            }
+            CATEGORY_KEYWORDS.put(e.getKey(), merged.toArray(new String[0]));
+        }
+        Log.i(TAG, "商户词库已加载,共 " + total + " 条");
     }
 
     private static MoneyDbHelper instance;
@@ -610,6 +692,224 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         try { db.execSQL("ALTER TABLE transactions ADD COLUMN to_account_id INTEGER"); } catch (Exception ignore) {}
         createExtTables(db);
         seedDefaultAccount(db);
+        // v3.0.4: 历史数据修复 — 过滤误记的非支付信息、归一化商户名、修正退款方向与分类
+        if (oldV < 3) {
+            try {
+                migrateV3(db);
+            } catch (Throwable t) {
+                Log.e(TAG, "migrateV3 失败: " + t.getMessage(), t);
+            }
+        }
+        // v3.0.4 (v4): 二次清洗 — V3 修补后仍残留的旧商户名(含金额/余额整段)、退款分类
+        if (oldV < 4) {
+            try {
+                migrateV4(db);
+            } catch (Throwable t) {
+                Log.e(TAG, "migrateV4 失败: " + t.getMessage(), t);
+            }
+        }
+    }
+
+    /**
+     * v3.0.4 (DB v4): 二次清洗
+     * 1. 旧版本把 "商户51元，余额1,146.59元。工商银行" 整段写进 merchant → 重新归一化
+     * 2. 收入且原文是退款 → 强制 refund(优先于商户记忆,V3 曾被记忆覆盖成 food)
+     */
+    private void migrateV4(SQLiteDatabase db) {
+        try {
+            List<Object[]> fixRows = new ArrayList<>();
+            Cursor c = db.rawQuery(
+                "SELECT id, type, category_id, merchant, raw_text FROM transactions", null);
+            while (c.moveToNext()) {
+                String id = c.getString(0);
+                String type = c.getString(1);
+                String cat = c.isNull(2) ? "" : c.getString(2);
+                String merchant = c.isNull(3) ? "" : c.getString(3);
+                String raw = c.isNull(4) ? "" : c.getString(4);
+
+                String nm = PaymentParser.normalizeMerchant(merchant);
+                if ((nm == null || nm.isEmpty() || "未知商户".equals(nm))
+                        && "income".equals(type)
+                        && (raw.contains("退款") || raw.contains("退费"))) {
+                    nm = "退款";
+                }
+                if (nm == null || nm.isEmpty()) nm = "未知商户";
+                String newCat = cat;
+
+                if ("income".equals(type)
+                        && (raw.contains("退款") || raw.contains("退费"))
+                        && !"refund".equals(cat)) {
+                    newCat = "refund";
+                }
+                if ("expense".equals(type) && isBankFeeMerchant(nm) && !"other_out".equals(cat)) {
+                    newCat = "other_out";
+                }
+                if (!nm.equals(merchant) || !newCat.equals(cat)) {
+                    fixRows.add(new Object[]{id, nm, newCat});
+                }
+            }
+            c.close();
+            for (Object[] row : fixRows) {
+                ContentValues v = new ContentValues();
+                v.put("merchant", (String) row[1]);
+                v.put("category_id", (String) row[2]);
+                db.update("transactions", v, "id=?", new String[]{(String) row[0]});
+            }
+            Log.d(TAG, "v4 交易二次清洗: " + fixRows.size() + " 条");
+        } catch (Throwable t) {
+            Log.e(TAG, "v4 交易清洗失败: " + t.getMessage(), t);
+        }
+    }
+
+    /**
+     * v3.0.4: 基于真实手机数据的批量修复
+     * 1. 删除被误记成交易的账单/广告/余额提醒(仅自动记账,不动手动记录)
+     * 2. 退款到账被记成支出的方向修正
+     * 3. 商户名归一化(去支付宝-/财付通-等渠道前缀)
+     * 4. other_out 等模糊分类按新关键词重新识别
+     */
+    private void migrateV3(SQLiteDatabase db) {
+        // ---- 1. 清理非支付信息误记 ----
+        try {
+            List<String> delIds = new ArrayList<>();
+            Cursor c = db.rawQuery("SELECT id, raw_text FROM transactions WHERE auto=1", null);
+            while (c.moveToNext()) {
+                String id = c.getString(0);
+                String raw = c.isNull(1) ? "" : c.getString(1);
+                if (PaymentParser.isBillStatement(raw) || PaymentParser.isNonPaymentInfo(raw)) {
+                    delIds.add(id);
+                }
+            }
+            c.close();
+            for (String id : delIds) {
+                db.delete("transactions", "id=?", new String[]{id});
+                Log.d(TAG, "v3 清理非支付误记: " + id);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "v3 清理失败", t);
+        }
+
+        // ---- 2. 商户记忆键归一化(旧键→新键,冲突覆盖) ----
+        try {
+            Map<String, String> catMap = new LinkedHashMap<>();
+            Map<String, Long> accMap = new LinkedHashMap<>();
+            Cursor c = db.rawQuery("SELECT merchant, category_id FROM merchant_category_map", null);
+            while (c.moveToNext()) {
+                String m = c.isNull(0) ? "" : c.getString(0);
+                String cat = c.isNull(1) ? null : c.getString(1);
+                if (m.isEmpty() || cat == null) continue;
+                catMap.put(PaymentParser.normalizeMerchant(m), cat);
+            }
+            c.close();
+            Cursor c2 = db.rawQuery("SELECT merchant, account_id FROM merchant_account_map", null);
+            while (c2.moveToNext()) {
+                String m = c2.isNull(0) ? "" : c2.getString(0);
+                long acc = c2.isNull(1) ? 0 : c2.getLong(1);
+                if (m.isEmpty() || acc <= 0) continue;
+                accMap.put(PaymentParser.normalizeMerchant(m), acc);
+            }
+            c2.close();
+            db.delete("merchant_category_map", null, null);
+            db.delete("merchant_account_map", null, null);
+            for (Map.Entry<String, String> e : catMap.entrySet()) {
+                ContentValues v = new ContentValues();
+                v.put("merchant", e.getKey());
+                v.put("category_id", e.getValue());
+                db.insertWithOnConflict("merchant_category_map", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+            }
+            for (Map.Entry<String, Long> e : accMap.entrySet()) {
+                ContentValues v = new ContentValues();
+                v.put("merchant", e.getKey());
+                v.put("account_id", e.getValue());
+                db.insertWithOnConflict("merchant_account_map", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "v3 商户映射迁移失败", t);
+        }
+
+        // ---- 3. 逐条修复交易 ----
+        try {
+            List<Object[]> fixRows = new ArrayList<>();
+            Cursor c = db.rawQuery(
+                "SELECT id, type, amount, category_id, merchant, raw_text, auto FROM transactions", null);
+            while (c.moveToNext()) {
+                String id = c.getString(0);
+                String type = c.getString(1);
+                String category = c.isNull(3) ? "" : c.getString(3);
+                String merchant = c.isNull(4) ? "" : c.getString(4);
+                String raw = c.isNull(5) ? "" : c.getString(5);
+
+                String newMerchant = PaymentParser.normalizeMerchant(merchant);
+                if (newMerchant.isEmpty()) newMerchant = merchant;
+                String newType = type;
+                String newCat = category;
+
+                // 退款到账被误记成支出 → 改收入 + refund
+                boolean refundText = (raw.contains("收入(") || raw.contains("收入（"))
+                        && (raw.contains("退款") || raw.contains("退费"));
+                if ("expense".equals(type) && refundText) {
+                    newType = "income";
+                    newCat = "refund";
+                } else if ("income".equals(type) && refundText && !"refund".equals(category)) {
+                    newCat = "refund";
+                }
+
+                // 记忆分类优先(升级过程中直接用当前 db 查,避免 getReadableDatabase 重入)
+                if (!"未知商户".equals(newMerchant) && !newMerchant.isEmpty()) {
+                    String memo = null;
+                    Cursor mc = db.rawQuery(
+                        "SELECT category_id FROM merchant_category_map WHERE merchant=?",
+                        new String[]{newMerchant});
+                    if (mc.moveToFirst()) memo = mc.isNull(0) ? null : mc.getString(0);
+                    mc.close();
+                    if (memo != null && !memo.isEmpty()) {
+                        newCat = memo;
+                    } else if (!"refund".equals(newCat)) {
+                        // 原分类模糊或是明显错的(餐饮被归到 other_out / 医院被归到 food)时重新识别
+                        if ("expense".equals(newType)
+                                && ("other_out".equals(category) || "food".equals(category) || category.isEmpty())) {
+                            PaymentParser.Result pr = new PaymentParser.Result();
+                            pr.type = newType;
+                            pr.merchant = newMerchant;
+                            pr.amount = c.isNull(2) ? 0 : c.getDouble(2);
+                            pr.success = true;
+                            String guess = matchCategory(pr, raw + " " + newMerchant);
+                            if (guess != null && !guess.isEmpty() && !guess.equals(category)) {
+                                newCat = guess;
+                            }
+                        }
+                    }
+                }
+                // 银行自扣费用固定归 other_out
+                if ("expense".equals(newType) && isBankFeeMerchant(newMerchant)) {
+                    newCat = "other_out";
+                }
+
+                if (!newMerchant.equals(merchant) || !newType.equals(type)
+                        || !newCat.equals(category)) {
+                    fixRows.add(new Object[]{id, newMerchant, newType, newCat});
+                }
+            }
+            c.close();
+            for (Object[] row : fixRows) {
+                ContentValues v = new ContentValues();
+                v.put("merchant", (String) row[1]);
+                v.put("type", (String) row[2]);
+                v.put("category_id", (String) row[3]);
+                db.update("transactions", v, "id=?", new String[]{(String) row[0]});
+            }
+            Log.d(TAG, "v3 交易修复完成: " + fixRows.size() + " 条");
+        } catch (Throwable t) {
+            Log.e(TAG, "v3 交易修复失败", t);
+        }
+    }
+
+    /** 银行自扣费用类商户 */
+    private boolean isBankFeeMerchant(String merchant) {
+        if (merchant == null) return false;
+        return merchant.contains("信使") || merchant.contains("服务费") || merchant.contains("年费")
+                || merchant.contains("工本费") || merchant.contains("短信费") || merchant.contains("账户管理费")
+                || merchant.contains("小额账户管理");
     }
 
     @Override
@@ -733,10 +1033,164 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
      * v2.2.17: 判断 merchant 是否是 fallback 默认值
      * "未知"、"未知商户"、空、null 都算没有真实商户
      */
+    /**
+     * v3.0.6: 补录历史漏记的支付宝/微信支付通知(已消费但未解析成功)。
+     * 去重策略:银行/短信记录同额 10 分钟内视为同一笔(银行优先);
+     * 平台记录同额 2 分钟内视为同一通知重复推送;同原文已存在直接跳过。
+     * 只执行一次,由 SharedPreferences 标记。
+     */
+    public synchronized void backfillMissedPlatformNotifications() {
+        final String flag = "backfill_platform_v306";
+        try {
+            android.content.SharedPreferences sp = ctx.getSharedPreferences("moneybook", Context.MODE_PRIVATE);
+            if (sp.getBoolean(flag, false)) return;
+            java.io.File f = ctx.getDatabasePath("moneybook_notif.db");
+            if (!f.exists()) {
+                sp.edit().putBoolean(flag, true).apply();
+                return;
+            }
+            SQLiteDatabase ndb = null;
+            int added = 0, skipped = 0;
+            try {
+                ndb = SQLiteDatabase.openDatabase(f.getPath(), null, SQLiteDatabase.OPEN_READWRITE);
+                Cursor c = ndb.rawQuery(
+                        "SELECT id,pkg,content,posted_at FROM pending_notifications " +
+                        "WHERE pkg IN (?,?) AND parsed=0 AND consumed=1 " +
+                        "AND content IS NOT NULL AND content!='' ORDER BY posted_at ASC",
+                        new String[]{"com.eg.android.AlipayGphone", "com.tencent.mm"});
+                SQLiteDatabase db = getWritableDatabase();
+                while (c.moveToNext()) {
+                    long nid = c.getLong(0);
+                    String pkg = c.getString(1);
+                    String text = c.getString(2);
+                    long ts = c.getLong(3);
+                    if (ts <= 0) ts = System.currentTimeMillis();
+                    PaymentParser.Result r = PaymentParser.parse(text, pkg);
+                    if (r == null || !r.success || r.amount <= 0) continue;
+                    if (isBillAlreadyRecorded(db, r, text, ts)) {
+                        skipped++;
+                    } else {
+                        if (saveTransaction(db, r, pkg, text, ts)) added++;
+                        else skipped++;
+                    }
+                    ContentValues pv = new ContentValues();
+                    pv.put("parsed", 1);
+                    pv.put("parsed_type", r.type);
+                    pv.put("parsed_amount", r.amount);
+                    pv.put("parsed_merchant", r.merchant == null ? "" : r.merchant);
+                    pv.put("parsed_source", r.source == null ? "" : r.source);
+                    ndb.update("pending_notifications", pv, "id=?", new String[]{String.valueOf(nid)});
+                }
+                c.close();
+            } finally {
+                if (ndb != null) ndb.close();
+            }
+            sp.edit().putBoolean(flag, true).apply();
+            try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
+            Log.i(TAG, "补录支付宝/微信通知完成: 新增 " + added + " 条, 跳过重复 " + skipped + " 条");
+        } catch (Throwable t) {
+            Log.w(TAG, "补录支付宝/微信通知失败: " + t.getMessage());
+        }
+    }
+
+    private boolean isBillAlreadyRecorded(SQLiteDatabase db, PaymentParser.Result r, String text, long ts) {
+        Cursor c = db.rawQuery("SELECT id FROM transactions WHERE raw_text=? LIMIT 1", new String[]{text});
+        boolean exists = c.moveToFirst();
+        c.close();
+        if (exists) return true;
+        c = db.rawQuery(
+                "SELECT source, abs(occurred_at-?) AS d FROM transactions " +
+                "WHERE type=? AND amount=? AND abs(occurred_at-?)<600000 ORDER BY d ASC LIMIT 5",
+                new String[]{String.valueOf(ts), r.type, String.valueOf(r.amount), String.valueOf(ts)});
+        try {
+            while (c.moveToNext()) {
+                String src = c.isNull(0) ? "" : c.getString(0);
+                long diff = c.getLong(1);
+                // 银行/短信同额 10 分钟内 → 同一笔,银行信息优先
+                if ("bank".equals(src) || "sms".equals(src)) return true;
+                // 平台/未知来源同额 2 分钟内 → 同一通知重复推送
+                if (diff < 120000) return true;
+            }
+        } finally {
+            c.close();
+        }
+        return false;
+    }
+
     private static boolean isUnknownMerchant(String merchant) {
         if (merchant == null) return true;
         String m = merchant.trim();
         return m.isEmpty() || m.equals("未知") || m.equals("未知商户") || m.equals("other") || m.equals("Other");
+    }
+
+    // v3.0.6: 渠道判定 — 银行信息优先,同渠道多笔不去重
+    private static boolean isBankPkg(String pkg) {
+        if (pkg == null) return false;
+        String p = pkg.toLowerCase();
+        if (p.equals("sms") || p.equals("startup_scan") || p.equals("manual_test") || p.equals("test_sms")) return false;
+        String[] keys = {"bank", "icbc", "ccb", "abchina", "boc", "cmb", "bocom", "cebbank",
+                "citic", "spdb", "psbc", "cmbc", "cgb", "hxb", "pab", "spabank", "bankcomm"};
+        for (String k : keys) if (p.contains(k)) return true;
+        return false;
+    }
+
+    private static boolean looksLikeBankText(String raw) {
+        if (raw == null || raw.isEmpty()) return false;
+        String t = raw.replaceAll("\\s+", " ");
+        if (t.contains("尾号") && (t.contains("支出") || t.contains("消费") || t.contains("收入")
+                || t.contains("转入") || t.contains("扣款"))) return true;
+        String[] banks = {"工商银行", "建设银行", "农业银行", "中国银行", "招商银行", "交通银行",
+                "邮储银行", "邮政储蓄", "中信银行", "民生银行", "光大银行", "兴业银行",
+                "浦发银行", "平安银行", "华夏银行", "广发银行"};
+        for (String b : banks) if (t.contains(b)) return true;
+        return false;
+    }
+
+    private static boolean isBankRecord(String source, String raw) {
+        if (source != null) {
+            String s = source.toLowerCase();
+            if (s.equals("alipay") || s.equals("wechat") || s.equals("unionpay")) return false;
+            if (s.equals("bank") || isBankPkg(s)) return true;
+            if (s.equals("sms") || s.isEmpty() || s.equals("unknown")) return looksLikeBankText(raw);
+        }
+        return looksLikeBankText(raw);
+    }
+
+    private String effectiveSource(String pkg, PaymentParser.Result parsed) {
+        if (parsed != null && "bank".equals(parsed.source)) return "bank";
+        if (isBankPkg(pkg)) return "bank";
+        return mapSource(pkg);
+    }
+
+    /** 银行信息覆盖已有平台记录(同一笔交易) */
+    private void mergeBankIntoExisting(SQLiteDatabase db, String id, PaymentParser.Result parsed,
+                                       String raw, String source, long occurredAt, String merchant) {
+        String m = isUnknownMerchant(merchant) ? "未知商户" : PaymentParser.normalizeMerchant(merchant);
+        if (m == null || m.isEmpty()) m = "未知商户";
+        ContentValues v = new ContentValues();
+        v.put("merchant", m);
+        v.put("source", source);
+        v.put("raw_text", raw);
+        // v3.0.15: 合并时同样按商户记忆/关键词自动分类
+        v.put("category_id", resolveCategory(parsed, raw, m));
+        v.put("occurred_at", occurredAt);
+        if (raw != null && raw.contains("花呗")) v.put("note", "花呗支付");
+        if (!"未知商户".equals(m)) {
+            long boundAcc = getMerchantAccountId(m);
+            if (boundAcc > 0) v.put("account_id", boundAcc);
+        }
+        db.update("transactions", v, "id=?", new String[]{id});
+        Log.d(TAG, "合并: 银行信息优先,升级已有记录 [" + m + "] ¥" + parsed.amount);
+        try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
+    }
+
+    /** 已有银行记录时,把花呗等信用支付渠道补进备注 */
+    private void markCreditChannel(SQLiteDatabase db, String id, String raw) {
+        if (raw == null) return;
+        if (raw.contains("花呗")) {
+            db.execSQL("UPDATE transactions SET note='花呗支付' WHERE id=? AND (note IS NULL OR note='')",
+                    new String[]{id});
+        }
     }
 
     public boolean saveTransaction(SQLiteDatabase db, PaymentParser.Result parsed, String pkg, String raw, long occurredAt) {
@@ -780,62 +1234,105 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             }
         }
 
-        // 第 2 层: 同金额同商户 2 分钟内 — 银行短信和支付 APP 通知
-        // 原因: 同一笔支付,银行扣款短信、支付宝通知、微信通知几乎同时来(1-2min 内)
-        // v2.2.17 关键修复: 把 "未知"/"未知商户" 统一当 fallback,不再走精确匹配分支
+        // 第 2 层: 同金额同商户 30 秒内 — 仅跨渠道(银行 ↔ 支付宝/微信/其他)视为同一笔
+        // v3.0.6: 同一商户短时间内同金额多笔(同渠道)必须分别记账,不能去重
         String merchant = parsed.merchant == null ? "" : parsed.merchant;
+        String currentSource = effectiveSource(pkg, parsed);
+        boolean currentBank = isBankRecord(currentSource, raw);
         if (parsed.amount > 0) {
+            Cursor c = null;
             try {
                 String whereClause;
                 String[] whereArgs;
-                if (!isUnknownMerchant(merchant)) {
-                    // 有真实商户:精确匹配 amount + merchant + 2min
-                    whereClause = "amount=? AND merchant=? AND abs(occurred_at - ?) < 120000";
-                    whereArgs = new String[]{String.valueOf(parsed.amount), merchant, String.valueOf(occurredAt)};
+                // v3.0.12: 入库时 merchant 已归一化,去重也必须用归一化后的值。
+                // 否则「支付宝-瑞幸咖啡」匹配不到已入库的「瑞幸咖啡」,跨渠道去重失效
+                String merchantNorm = isUnknownMerchant(merchant)
+                        ? "" : PaymentParser.normalizeMerchant(merchant);
+                if (merchantNorm == null) merchantNorm = "";
+                if (!merchantNorm.isEmpty()) {
+                    whereClause = "amount=? AND merchant=? AND abs(occurred_at - ?) < 30000";
+                    whereArgs = new String[]{String.valueOf(parsed.amount), merchantNorm, String.valueOf(occurredAt)};
                 } else {
-                    // 没有真实商户(通知没解析出来 / 短信没带商户):
-                    // 把 DB 里"所有 fallback 商户"的同金额交易都算重复
-                    // 这能解决:通知来一笔(merchant=未知) + 短信来一笔(merchant=未知商户) = 同一笔
-                    whereClause = "amount=? AND type=? AND (merchant IS NULL OR merchant='' OR merchant='未知' OR merchant='未知商户') AND abs(occurred_at - ?) < 120000";
+                    // 没有真实商户:只和 fallback 商户的记录比对
+                    whereClause = "amount=? AND type=? AND (merchant IS NULL OR merchant='' OR merchant='未知' OR merchant='未知商户') AND abs(occurred_at - ?) < 30000";
                     whereArgs = new String[]{String.valueOf(parsed.amount), parsed.type, String.valueOf(occurredAt)};
                 }
-                Cursor c = db.rawQuery("SELECT id, source, raw_text FROM transactions WHERE " + whereClause + " LIMIT 1", whereArgs);
-                if (c.moveToFirst()) {
-                    String existingSource = c.isNull(1) ? "" : c.getString(1);
-                    String existingRaw = c.isNull(2) ? "" : c.getString(2);
-                    c.close();
-                    Log.d(TAG, "去重[2]: 2min 内同金额" + (isUnknownMerchant(merchant) ? "(fallback 商户)" : "同商户") + " 已有 [" + existingSource + "] " + merchant + " ¥" + parsed.amount);
-                    Log.d(TAG, "  已有: " + existingRaw.substring(0, Math.min(40, existingRaw.length())));
-                    Log.d(TAG, "  当前: " + (raw == null ? "" : raw.substring(0, Math.min(40, raw.length()))));
+                // v3.0.12: 同额候选可能有多条.不能只取第一条:
+                // 若第一条是同渠道记录,会挡住后面真正的银行记录,导致跨渠道重复入账
+                c = db.rawQuery("SELECT id, source, raw_text FROM transactions WHERE "
+                        + whereClause + " ORDER BY occurred_at ASC", whereArgs);
+                String crossId = null, crossSource = "", sameId = null;
+                while (c.moveToNext()) {
+                    String id = c.getString(0);
+                    String src = c.isNull(1) ? "" : c.getString(1);
+                    String rawx = c.isNull(2) ? "" : c.getString(2);
+                    if (isBankRecord(src, rawx) != currentBank) {
+                        crossId = id;
+                        crossSource = src;
+                        break;
+                    }
+                    if (sameId == null) sameId = id;
+                }
+                if (crossId != null) {
+                    // 跨渠道:同一笔交易 → 银行信息优先
+                    if (currentBank) {
+                        mergeBankIntoExisting(db, crossId, parsed, raw, currentSource, occurredAt, merchant);
+                        return true;
+                    }
+                    Log.d(TAG, "去重[2]: 已有银行记录 [" + crossSource + "] 优先,忽略当前 ¥" + parsed.amount);
+                    markCreditChannel(db, crossId, raw);
                     return false;
                 }
-                c.close();
+                if (sameId != null) {
+                    // 同渠道:可能是同一商户连续多笔同金额 → 分别记账
+                    Log.d(TAG, "去重[2] 不合并: 同渠道同商户同金额 [" + currentSource + "] ¥" + parsed.amount);
+                }
             } catch (Exception e) {
                 Log.w(TAG, "去重[2] 失败: " + e.getMessage());
+            } finally {
+                if (c != null) c.close();
             }
         }
 
-        // 第 3 层 (v2.2.17 新增): 同 type + 同金额 + 5 分钟内的最后保险
-        // 极端情况: 通知/短信 merchant 都是 fallback,但 raw_text 也不同(微信通知 vs 工行短信)
-        // 这种情况下第 1、2 层都漏,加这一层兜底
-        // 注意:用 type 区分收入/支出,避免误杀"充 100 又退 100"
-        if (parsed.amount > 0) {
+        // 第 3 层: 双方都无商户且同金额 30 秒内 — 仍只在跨渠道时合并
+        // 同渠道视为两笔独立交易,避免误杀"同店连续两笔同金额"
+        if (parsed.amount > 0 && isUnknownMerchant(merchant)) {
+            Cursor c3 = null;
             try {
-                String whereClause3 = "amount=? AND type=? AND abs(occurred_at - ?) < 300000";
+                String whereClause3 = "amount=? AND type=? AND abs(occurred_at - ?) < 30000";
                 String[] whereArgs3 = new String[]{String.valueOf(parsed.amount), parsed.type, String.valueOf(occurredAt)};
-                Cursor c3 = db.rawQuery("SELECT id, source FROM transactions WHERE " + whereClause3 + " LIMIT 1", whereArgs3);
-                if (c3.moveToFirst()) {
-                    String existingSource = c3.isNull(1) ? "" : c3.getString(1);
-                    c3.close();
-                    // 但如果已经有真实商户信息,就不去重(避免快速连买)
-                    if (isUnknownMerchant(merchant)) {
-                        Log.d(TAG, "去重[3]: 5min 内同 type 同金额 已有 [" + existingSource + "] ¥" + parsed.amount);
-                        return false;
+                // v3.0.12: 同层 2,遍历全部候选,优先命中跨渠道的银行记录
+                c3 = db.rawQuery("SELECT id, source, raw_text FROM transactions WHERE "
+                        + whereClause3 + " ORDER BY occurred_at ASC", whereArgs3);
+                String crossId = null, crossSource = "";
+                boolean hasCandidate = false;
+                while (c3.moveToNext()) {
+                    hasCandidate = true;
+                    String id = c3.getString(0);
+                    String src = c3.isNull(1) ? "" : c3.getString(1);
+                    String rawx = c3.isNull(2) ? "" : c3.getString(2);
+                    if (isBankRecord(src, rawx) != currentBank) {
+                        crossId = id;
+                        crossSource = src;
+                        break;
                     }
                 }
-                c3.close();
+                if (crossId != null) {
+                    if (currentBank) {
+                        mergeBankIntoExisting(db, crossId, parsed, raw, currentSource, occurredAt, merchant);
+                        return true;
+                    }
+                    Log.d(TAG, "去重[3]: 已有银行记录 [" + crossSource + "] 优先,忽略当前 ¥" + parsed.amount);
+                    markCreditChannel(db, crossId, raw);
+                    return false;
+                }
+                if (hasCandidate) {
+                    Log.d(TAG, "去重[3] 不合并: 同渠道同金额无商户");
+                }
             } catch (Exception e) {
                 Log.w(TAG, "去重[3] 失败: " + e.getMessage());
+            } finally {
+                if (c3 != null) c3.close();
             }
         }
 
@@ -843,8 +1340,7 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         v.put("id", UUID.randomUUID().toString());
         v.put("type", parsed.type);
         v.put("amount", parsed.amount);
-        v.put("category_id", matchCategory(parsed, raw));
-        v.put("source", mapSource(pkg));
+        v.put("source", currentSource);
         // v2.2.26 终极兜底: 入库前再从 raw 里强制提取 [] 内容
         // 即使 PaymentParser 没解析出 merchant,这里也能兜底
         String merchantFinal = parsed.merchant == null ? "" : parsed.merchant;
@@ -855,10 +1351,15 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
                 Log.d(TAG, "兜底[入库前]: 从 raw 提取 merchant = " + merchantFinal);
             }
         }
-        // 归一化:所有 fallback 商户统一写 "未知商户"
-        String merchantNormalized = isUnknownMerchant(merchantFinal) ? "未知商户" : merchantFinal;
-        v.put("merchant", merchantNormalized == null ? "" : merchantNormalized);
-        v.put("note", "");
+        // 归一化:所有 fallback 商户统一写 "未知商户";其余商户去掉渠道前缀
+        String merchantNormalized = isUnknownMerchant(merchantFinal)
+                ? "未知商户"
+                : PaymentParser.normalizeMerchant(merchantFinal);
+        if (merchantNormalized == null || merchantNormalized.isEmpty()) merchantNormalized = "未知商户";
+        v.put("merchant", merchantNormalized);
+        // v3.0.15: 记账时自动分类 —— 商户记忆优先,其次关键词加权匹配(不再依赖手动整理)
+        v.put("category_id", resolveCategory(parsed, raw, merchantNormalized));
+        v.put("note", (raw != null && raw.contains("花呗")) ? "花呗支付" : "");
         v.put("raw_text", raw);
         v.put("occurred_at", occurredAt);
         v.put("created_at", System.currentTimeMillis());
@@ -909,6 +1410,15 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
 
         // ===== 1. 银行短信特殊规则前置匹配 =====
         if ("expense".equals(parsed.type)) {
+            // v3.0.4: 医院/诊所强规则(避免 "缴费财付通-航空总医院" 被误判成餐饮)
+            if (merchant.contains("医院") || merchant.contains("卫生院") || merchant.contains("诊所")
+                    || lower.contains("医院") || lower.contains("卫生院")) {
+                return "medical";
+            }
+            // v3.0.4: 银行自扣费用(信使展期服务费/年费/工本费) → 其他支出
+            if (isBankFeeMerchant(merchant)) {
+                return "other_out";
+            }
             // 信用卡还款 / 充值
             if (lower.contains("信用卡还款") || lower.contains("信用卡账单还款") || lower.contains("还信用卡")) {
                 return "transfer_out";
@@ -1002,6 +1512,92 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
             return "other_in";
         }
         return best;
+    }
+
+    /**
+     * v3.0.15: 记账时自动分类的统一入口
+     * 1) 商户记忆(用户曾经手动改过该商户的分类)优先
+     * 2) 否则走关键词加权匹配
+     * 记忆命中时校验收支方向,避免历史记忆把支出记成收入分类
+     */
+    private String resolveCategory(PaymentParser.Result parsed, String raw, String merchantNormalized) {
+        if (merchantNormalized != null && !merchantNormalized.isEmpty()
+                && !"未知商户".equals(merchantNormalized)) {
+            String memo = getMerchantCategory(merchantNormalized);
+            if (memo != null && !memo.isEmpty() && isCategoryTypeMatch(parsed.type, memo)) {
+                Log.d(TAG, "自动分类[商户记忆] " + merchantNormalized + " -> " + memo);
+                return memo;
+            }
+        }
+        String cat = matchCategory(parsed, raw);
+        Log.d(TAG, "自动分类[关键词] " + merchantNormalized + " -> " + cat);
+        return cat;
+    }
+
+    private boolean isCategoryTypeMatch(String type, String categoryId) {
+        if (categoryId == null) return false;
+        if ("transfer".equals(type)) return categoryId.startsWith("transfer_");
+        boolean expenseCat = Arrays.asList(
+                "food","transport","shopping","entertainment","daily","medical","housing","learning","transfer_out"
+            ).contains(categoryId);
+        boolean incomeCat = Arrays.asList(
+                "salary","bonus","refund","investment","redpacket","transfer_in"
+            ).contains(categoryId);
+        if ("expense".equals(type)) return expenseCat;
+        if ("income".equals(type)) return incomeCat;
+        return true;
+    }
+
+    /**
+     * v3.0.15: 历史导入账单自动归类(启动时执行一次)
+     * v3.0.16: 扫描范围扩大到全部支付宝/微信记录,按最新关键词规则重算,
+     *          已有商户记忆的记录以记忆为准,分类未变化的不写库。
+     */
+    public int autoReclassifyImportedOthers() {
+        int changed = 0;
+        Cursor c = null;
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            c = db.rawQuery(
+                "SELECT id, type, amount, merchant, note, raw_text, category_id FROM transactions " +
+                "WHERE (source IN ('alipay','wechat') OR raw_text LIKE 'alipay:%')", null);
+            while (c.moveToNext()) {
+                String id = c.getString(0);
+                String type = c.getString(1);
+                String merchant = c.isNull(3) ? "" : c.getString(3);
+                String note = c.isNull(4) ? "" : c.getString(4);
+                String raw = c.isNull(5) ? "" : c.getString(5);
+                String oldCat = c.isNull(6) ? "" : c.getString(6);
+                if (merchant.isEmpty() && note.isEmpty()) continue;
+                PaymentParser.Result r = new PaymentParser.Result();
+                r.success = true;
+                r.type = type;
+                r.amount = c.getDouble(2);
+                r.merchant = merchant;
+                // 导入时 merchant=交易对方,note=商品说明,raw_text 只有订单号;
+                // 只用 merchant+note 打分,避免订单号/渠道字眼干扰
+                String text = merchant + " " + note;
+                if (note.isEmpty()) text = merchant + " " + raw;
+                String cat = resolveCategory(r, text, merchant);
+                if (cat == null || cat.equals(oldCat)) continue;
+                ContentValues v = new ContentValues();
+                v.put("category_id", cat);
+                if (db.update("transactions", v, "id=?", new String[]{id}) > 0) {
+                    changed++;
+                }
+            }
+            if (changed > 0) {
+                Log.i(TAG, "✓ 自动归类历史其他账单: " + changed + " 条");
+                try { MoneyWidgetProvider.sendRefreshBroadcast(this.ctx); } catch (Throwable ignore) {}
+            } else {
+                Log.i(TAG, "自动归类历史其他账单: 无可归类记录");
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "autoReclassifyImportedOthers err: " + t.getMessage(), t);
+        } finally {
+            if (c != null) c.close();
+        }
+        return changed;
     }
 
     /**
@@ -1214,22 +1810,22 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
                 c2.close();
             } catch (Exception ignore) {}
 
-            // 2) 清理重复:同 type + 同 amount + 1min 内 + 任何 fallback merchant
+            // 2) 清理跨渠道重复:仅删除与银行记录同金额(2min内)的平台记录,保留银行信息
+            //    v3.0.6: 同渠道同商户同金额的多笔交易一律保留,不再清理
             db.execSQL(
                 "DELETE FROM transactions WHERE id IN (" +
-                "  SELECT id FROM transactions t1 " +
-                "  WHERE EXISTS (" +
-                "    SELECT 1 FROM transactions t2 " +
-                "    WHERE t2.id != t1.id " +
-                "    AND t2.type = t1.type " +
-                "    AND t2.amount = t1.amount " +
-                "    AND abs(t2.occurred_at - t1.occurred_at) < 60000 " +
+                "  SELECT plat.id FROM transactions plat " +
+                "  WHERE plat.source IN ('alipay','wechat','unionpay') " +
+                "  AND EXISTS (" +
+                "    SELECT 1 FROM transactions bk " +
+                "    WHERE bk.id != plat.id " +
+                "    AND bk.type = plat.type " +
+                "    AND bk.amount = plat.amount " +
+                "    AND abs(bk.occurred_at - plat.occurred_at) < 120000 " +
                 "    AND (" +
-                "      (t1.merchant IS NULL OR t1.merchant='' OR t1.merchant='未知' OR t1.merchant='未知商户')" +
-                "      OR (t2.merchant IS NULL OR t2.merchant='' OR t2.merchant='未知' OR t2.merchant='未知商户')" +
-                "      OR t1.merchant = t2.merchant" +
+                "      bk.source='bank' OR bk.source LIKE '%bank%' " +
+                "      OR (bk.source='sms' AND (bk.raw_text LIKE '%尾号%' OR bk.raw_text LIKE '%银行%'))" +
                 "    )" +
-                "    AND t2.occurred_at < t1.occurred_at" +
                 "  )" +
                 ")"
             );
@@ -2040,16 +2636,22 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
         }
     }
 
-    /** 获取商户记忆的分类(null = 未记忆) */
+    /** 获取商户记忆的分类(null = 未记忆);v3.0.4 支持商户名归一化后匹配 */
     public String getMerchantCategory(String merchant) {
         if (merchant == null || merchant.isEmpty()) return null;
+        String norm = PaymentParser.normalizeMerchant(merchant);
         try {
-            Cursor c = getReadableDatabase().rawQuery(
-                "SELECT category_id FROM merchant_category_map WHERE merchant=?", new String[]{merchant});
-            String v = null;
-            if (c.moveToFirst()) v = c.isNull(0) ? null : c.getString(0);
-            c.close();
-            return v;
+            SQLiteDatabase db = getReadableDatabase();
+            for (String key : new String[]{norm, merchant}) {
+                if (key == null || key.isEmpty()) continue;
+                Cursor c = db.rawQuery(
+                    "SELECT category_id FROM merchant_category_map WHERE merchant=?", new String[]{key});
+                String v = null;
+                if (c.moveToFirst()) v = c.isNull(0) ? null : c.getString(0);
+                c.close();
+                if (v != null && !v.isEmpty()) return v;
+            }
+            return null;
         } catch (Throwable t) {
             Log.e(TAG, "getMerchantCategory err", t);
             return null;
@@ -2059,11 +2661,19 @@ public class MoneyDbHelper extends SQLiteOpenHelper {
     public boolean setMerchantCategoryJs(String merchant, String categoryId) {
         try {
             SQLiteDatabase db = getWritableDatabase();
+            String norm = PaymentParser.normalizeMerchant(merchant == null ? "" : merchant);
+            if (norm == null || norm.isEmpty()) norm = merchant == null ? "" : merchant;
             ContentValues v = new ContentValues();
-            v.put("merchant", merchant == null ? "" : merchant);
+            v.put("merchant", norm);
             v.put("category_id", categoryId);
-            int n = db.update("merchant_category_map", v, "merchant=?", new String[]{merchant});
-            if (n == 0) db.insert("merchant_category_map", null, v);
+            int n = db.update("merchant_category_map", v, "merchant=?", new String[]{norm});
+            if (n == 0) {
+                db.insertWithOnConflict("merchant_category_map", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+            }
+            // 清理旧键(带渠道前缀),避免重复
+            if (merchant != null && !merchant.equals(norm)) {
+                db.delete("merchant_category_map", "merchant=?", new String[]{merchant});
+            }
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "setMerchantCategoryJs err", t);

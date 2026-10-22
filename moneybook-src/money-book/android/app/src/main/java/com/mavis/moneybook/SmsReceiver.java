@@ -186,6 +186,11 @@ public class SmsReceiver extends BroadcastReceiver {
 
     private boolean isPaymentRelated(String address, String body) {
         // v2.2.52 强化: 发件人必须是银行白名单 OR 内容必须强匹配
+        // v3.0.4: 话费/宽带等月度账单不是交易,直接拒收(如中国广电【话费账单】)
+        if (PaymentParser.isBillStatement(body)) {
+            Log.d(TAG, "账单短信,拒收 [" + address + "]");
+            return false;
+        }
         // 第 1 步: 严格黑名单 — 电话费/广告/验证码直接拒收
         for (String bad : SMS_BLACKLIST) {
             if (body.contains(bad)) {

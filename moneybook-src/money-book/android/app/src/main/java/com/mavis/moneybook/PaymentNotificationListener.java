@@ -238,6 +238,119 @@ public class PaymentNotificationListener extends NotificationListenerService {
         }
     }
 
+    /**
+     * 全量补录历史支付宝/微信支付通知(仅执行一次)。
+     * 不再只处理 consumed=1 的通知:从未被界面消费的历史通知同样会参与补录。
+     * 支付宝允许无商户名,但必须有明确支出方向;营销/下单/0 元通知不入账。
+     * 重复判定:原文相同且通知时间相差 1 秒内才算重复推送,时间不同视为不同交易。
+     */
+    public static void backfillMissedPlatformNotifications(Context ctx) {
+        android.content.SharedPreferences sp =
+                ctx.getSharedPreferences("moneybook", Context.MODE_PRIVATE);
+        if (sp.getBoolean("backfill_platform_all_v313", false)) {
+            Log.i(TAG, "补录已执行过,跳过");
+            return;
+        }
+
+        NotificationDbHelper notifHelper = new NotificationDbHelper(ctx);
+        MoneyDbHelper moneyHelper = new MoneyDbHelper(ctx);
+        SQLiteDatabase notifDb = notifHelper.getWritableDatabase();
+        SQLiteDatabase moneyDb = moneyHelper.getWritableDatabase();
+        android.database.Cursor c = null;
+        int added = 0, skipped = 0;
+        boolean ok = false;
+        try {
+            // v3.0.11: 先清理平台记录与银行/短信同额、30 秒内重复的条目(银行优先,保留银行记录)
+            moneyDb.execSQL("DELETE FROM transactions WHERE source IN ('alipay','wechat','unionpay') "
+                    + "AND EXISTS (SELECT 1 FROM transactions b WHERE b.id != transactions.id "
+                    + "AND b.type = transactions.type AND b.amount = transactions.amount "
+                    + "AND abs(b.occurred_at - transactions.occurred_at) < 30000 "
+                    + "AND (b.source='bank' OR b.source LIKE '%bank%' "
+                    + "OR (b.source='sms' AND (b.raw_text LIKE '%尾号%' OR b.raw_text LIKE '%银行%'))))");
+
+            c = notifDb.query("pending_notifications",
+                    new String[]{"id", "pkg", "raw", "posted_at"},
+                    "pkg=? OR pkg=?",
+                    new String[]{"com.eg.android.AlipayGphone", "com.tencent.mm"},
+                    null, null, "posted_at ASC");
+            while (c != null && c.moveToNext()) {
+                long id = c.getLong(0);
+                String pkg = c.getString(1);
+                String raw = c.getString(2);
+                long postedAt = c.getLong(3);
+                if (raw == null || raw.trim().isEmpty()) continue;
+
+                PaymentParser.Result parsed = PaymentParser.parse(raw, pkg);
+                // v3.0.10: 支付宝只补录明确的支出类通知,营销/下单/0元通知一律不算
+                boolean alipay = "com.eg.android.AlipayGphone".equals(pkg);
+                boolean realPay = raw.contains("支出") || raw.contains("消费")
+                        || raw.contains("付款") || raw.contains("扣款");
+                boolean withMerchant = parsed.merchant != null
+                        && !parsed.merchant.trim().isEmpty()
+                        && !"未知商户".equals(parsed.merchant);
+                boolean acceptable = parsed.success && parsed.amount > 0
+                        && (!alipay || realPay || withMerchant);
+
+                // 无论是否补录成功,都回写解析结果,避免下次重复解析
+                ContentValues pv = new ContentValues();
+                pv.put("parsed", acceptable ? 1 : 0);
+                pv.put("parsed_type", acceptable ? (parsed.type == null ? "" : parsed.type) : "");
+                pv.put("parsed_amount", acceptable ? parsed.amount : 0);
+                pv.put("parsed_merchant", acceptable && parsed.merchant != null ? parsed.merchant : "");
+                pv.put("parsed_source", acceptable && parsed.source != null ? parsed.source : "");
+                notifDb.update("pending_notifications", pv, "id=?",
+                        new String[]{String.valueOf(id)});
+
+                if (!acceptable) { skipped++; continue; }
+
+                if (postedAt <= 0) postedAt = System.currentTimeMillis();
+
+                // v3.0.10: 只有原文相同且通知时间相差 1 秒内才算重复推送;
+                // 时间不同一律视为不同交易,允许分别入账
+                android.database.Cursor existed = moneyDb.rawQuery(
+                        "SELECT id FROM transactions WHERE raw_text=? AND abs(occurred_at-?)<1000 LIMIT 1",
+                        new String[]{raw, String.valueOf(postedAt)});
+                boolean has = existed.moveToFirst();
+                existed.close();
+                if (has) { skipped++; continue; }
+
+                if (moneyHelper.saveTransaction(moneyDb, parsed, pkg, raw, postedAt)) {
+                    added++;
+                } else {
+                    skipped++;
+                }
+            }
+            // 诊断:输出补录后的支付宝清单,便于核对是否仍有遗漏
+            try {
+                android.database.Cursor al = moneyDb.rawQuery(
+                        "SELECT amount, merchant, occurred_at FROM transactions WHERE source='alipay' ORDER BY occurred_at ASC", null);
+                StringBuilder sb = new StringBuilder();
+                int n = 0;
+                while (al.moveToNext()) {
+                    sb.append(al.getDouble(0)).append("|")
+                      .append(al.isNull(1) ? "" : al.getString(1)).append("|")
+                      .append(al.getLong(2)).append(";");
+                    n++;
+                }
+                al.close();
+                Log.i(TAG, "支付宝清单(" + n + "): " + sb);
+            } catch (Throwable ignore) {}
+            ok = true;
+        } catch (Throwable t) {
+            Log.e(TAG, "补录失败: " + t.getMessage(), t);
+        } finally {
+            if (c != null) c.close();
+            notifHelper.close();
+            moneyHelper.close();
+        }
+
+        // v3.0.12: 只有完整跑完才落盘 flag。中途异常时保留重试机会,避免补录永久中断
+        if (ok) {
+            sp.edit().putBoolean("backfill_platform_all_v313", true).apply();
+        }
+        Log.i(TAG, (ok ? "补录完成" : "补录中断") + ": 新增=" + added + " 跳过=" + skipped);
+    }
+
     private static class NotificationDbHelper extends SQLiteOpenHelper {
         private static final String DB_NAME = "moneybook_notif.db";
         private static final int VER = 2;

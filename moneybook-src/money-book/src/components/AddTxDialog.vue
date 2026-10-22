@@ -71,10 +71,11 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, onUnmounted } from 'vue'
 import { useBookStore } from '../stores/book'
 import { insertTransaction, getMerchantCategory } from '../db'
 import { showToast } from '../utils/dialog'
+import { pushBackHandler } from '../utils/back'
 
 const props = defineProps({ visible: { type: Boolean, default: false } })
 const emit = defineEmits(['close', 'saved'])
@@ -120,8 +121,20 @@ function ensureCategory(t) {
 }
 
 // 第一次打开时,初始化分类
+let unregisterBack = null
 watch(() => props.visible, (v) => {
-  if (v) ensureCategory(form.type)
+  if (v) {
+    ensureCategory(form.type)
+    // 弹窗打开时,系统返回键先关闭弹窗
+    unregisterBack = pushBackHandler(() => { emit('close'); return true })
+  } else if (unregisterBack) {
+    unregisterBack()
+    unregisterBack = null
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  if (unregisterBack) unregisterBack()
 })
 
 // v2.2.80: 等待分类就绪后再初始化,避免打开弹窗时分类为空导致无法保存

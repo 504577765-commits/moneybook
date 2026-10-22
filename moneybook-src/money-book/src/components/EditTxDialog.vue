@@ -98,10 +98,11 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, onUnmounted } from 'vue'
 import { useBookStore } from '../stores/book'
 import { saveTxSplits } from '../db'
 import { showToast, showConfirm } from '../utils/dialog'
+import { pushBackHandler } from '../utils/back'
 import dayjs from 'dayjs'
 
 const props = defineProps({
@@ -116,6 +117,21 @@ const deleting = ref(false)
 
 // 打开弹窗时的原始交易(含 splits/account_id),用于撤销快照
 const beforeTxInfo = ref(null)
+
+// 系统返回键: 弹窗打开时优先关闭弹窗
+let unregisterBack = null
+watch(() => props.visible, (v) => {
+  if (v) {
+    unregisterBack = pushBackHandler(() => { emit('close'); return true })
+  } else if (unregisterBack) {
+    unregisterBack()
+    unregisterBack = null
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  if (unregisterBack) unregisterBack()
+})
 
 // v2.2.80: 完整表单 — 新增 amount 和 timeInput
 const form = reactive({

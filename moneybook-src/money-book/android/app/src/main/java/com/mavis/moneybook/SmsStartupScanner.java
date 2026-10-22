@@ -132,6 +132,11 @@ public class SmsStartupScanner {
     }
 
     private boolean isLikelyPayment(String address, String body) {
+        // v3.0.4: 话费/宽带等月度账单不是交易,直接过滤(如中国广电【话费账单】)
+        if (PaymentParser.isBillStatement(body)) {
+            Log.d(TAG, "账单短信,过滤 [" + address + "]");
+            return false;
+        }
         if (address != null) {
             String addrUpper = address.toUpperCase();
             for (String prefix : new String[]{

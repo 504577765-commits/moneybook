@@ -74,7 +74,7 @@
     </div>
 
     <div class="muted b-hint fade-in-up" style="animation-delay: 0.1s">
-      点击分类设置"本月分配额度"。结转会把上月未花余额并入本月对应分类。
+      点击分类设置"本月分配额度"。每月首次进入会自动沿用上月已设置的预算；结转会把上月未花余额并入本月对应分类。
     </div>
   </div>
 </template>

@@ -39,11 +39,43 @@
 
 <script setup>
 import { useBookStore } from './stores/book'
-import { onMounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import DialogHost from './components/DialogHost.vue'
+import { dialogState, closeDialog } from './utils/dialog'
+import { runBackHandler } from './utils/back'
 
 const store = useBookStore()
 const ready = computed(() => store.ready)
+const router = useRouter()
+let backListener = null
+
+// 系统返回键: 弹窗 → 页面内弹层 → 路由上一页 → 退出应用
+onMounted(async () => {
+  try {
+    const { Capacitor } = await import('@capacitor/core')
+    if (!Capacitor.isNativePlatform()) return
+    const { App: CapApp } = await import('@capacitor/app')
+    backListener = await CapApp.addListener('backButton', () => {
+      if (dialogState.value.visible) {
+        closeDialog(false)
+        return
+      }
+      if (runBackHandler()) return
+      if (window.history.state && window.history.state.back) {
+        router.back()
+        return
+      }
+      CapApp.exitApp()
+    })
+  } catch (e) {
+    // Web 预览环境没有原生返回键
+  }
+})
+
+onUnmounted(() => {
+  try { backListener && backListener.remove() } catch (e) {}
+})
 </script>
 
 <style scoped>
